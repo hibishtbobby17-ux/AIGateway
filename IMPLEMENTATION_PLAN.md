@@ -21,13 +21,13 @@ Do not generate all modules in a single pass. Do not leave security-critical cod
 Use the following defaults unless repository constraints or a documented ADR justify a change:
 
 Backend: Go.
-Console: React and TypeScript.
+Frontend console: React and TypeScript, including management workflows and interactive topology/communication views.
 Primary database: PostgreSQL.
 Cache: optional Redis.
 Telemetry instrumentation and ingestion: OpenTelemetry SDKs and Collector.
 Trace and log storage: ClickHouse or a compatible alternative selected through an ADR.
 Metrics: Prometheus-compatible backend.
-Deployment: Docker, Docker Compose, Kubernetes, and Helm.
+Deployment: Docker, Docker Compose, Kubernetes, and one platform Helm chart that supports a complete single-release installation.
 API style: REST for management APIs; use protocol-appropriate transports for MCP and A2A.
 Testing: Go unit and integration tests, frontend tests, security tests, and load tests.
 
@@ -227,24 +227,28 @@ Acceptance criteria
 - [x] Tests cover reconnects, timeouts, invalid messages, and upstream failures.
 7. Milestone 3: Identity and authorization
 Tasks
-Define OAuth clients, tenants, issuers, audiences, scopes, and policies.
-Integrate a maintained OAuth/OIDC implementation.
-Implement authorization-code flow with PKCE S256.
-Implement client credentials for confidential clients.
-Integrate external OIDC discovery and issuer validation.
-Add provider configuration and claim mapping.
-Implement the built-in IdP foundation.
-Define signing-key storage, JWKS publication, and rotation.
-Implement secure token validation and revocation semantics.
-Implement RBAC and extensible ABAC authorization.
-Enforce discovery-time and invocation-time authorization.
-Implement downstream credential selection and delegated authentication.
-Add administrative authorization and audit events.
-Add tenant-isolation and OAuth security tests.
+- [x] Define the baseline tenant-scoped OAuth client, grant, redirect URI, scope, issuer/audience, and policy models.
+- [x] Add a fail-closed in-memory authorization-code/PKCE foundation with client and scope validation; authenticated user/consent integration and durable storage remain outstanding.
+- [ ] Integrate a maintained OAuth/OIDC implementation for production protocol handling.
+- [ ] Implement and integrate the production authorization-code flow with PKCE S256.
+- [ ] Implement client credentials for confidential clients.
+- [ ] Integrate external OIDC discovery and issuer validation.
+- [ ] Add provider configuration and claim mapping.
+- [ ] Implement the built-in IdP foundation.
+- [ ] Define signing-key storage, JWKS publication, and rotation.
+- [ ] Implement secure token validation and revocation semantics.
+- [ ] Implement RBAC and extensible ABAC authorization.
+- [ ] Enforce discovery-time and invocation-time authorization.
+- [ ] Implement downstream credential selection and delegated authentication.
+- [ ] Add administrative authorization and audit events.
+- [x] Add focused tests for PKCE S256, one-time/client-bound authorization codes, confidential and public client constraints, scope boundaries, and fail-closed authorization.
+- [ ] Add tenant-isolation and broader OAuth security tests.
 Acceptance criteria
 Valid supported clients authenticate successfully.
 Invalid issuers, audiences, redirect URIs, and token signatures are rejected.
 PKCE validation is enforced.
+Authorization requests fail closed unless an authenticated user/consent authorization service is configured; the current in-memory flow is foundation code, not production-ready.
+Authorization codes are single-use, bound to the registered client and exact redirect URI, and confidential client secrets are not retained or exposed in plaintext.
 Client credentials cannot exceed their assigned permissions.
 Unauthorized tools are hidden from discovery where appropriate and always denied at invocation.
 Downstream credentials are selected according to explicit trust configuration.
@@ -300,25 +304,33 @@ Gateway requests do not block indefinitely on telemetry storage.
 Buffering and memory usage remain bounded during backend outages.
 10. Milestone 6: Topology and console
 Tasks
-Create tenant-aware console authentication.
-Implement management APIs for registries and configuration.
-Build server and agent management views.
-Build the configured topology graph.
-Build the observed interaction graph.
+Create a React/TypeScript web frontend and tenant-aware console authentication.
+Implement authenticated management APIs for tenant-scoped registry, connection, gateway, and policy configuration.
+Build workflows to register, edit, enable/disable, validate, and inspect MCP servers and A2A agents, including connection health and actionable errors.
+Build server and agent detail views with configuration and relevant status.
+Build an interactive configured topology graph showing registered MCP servers, agents, and configured connections.
+Build an observed interaction graph showing actual MCP tool calls and A2A communications, with time-range and tenant/environment filters.
+Clearly distinguish configured relationships from observed telemetry and link graph nodes/edges to relevant details, tool calls, tasks, and traces.
 Add trace search and waterfall visualization.
 Add correlated log search.
 Add metrics charts and time-range filtering.
 Add MCP invocation and A2A task details.
 Add audit and health views.
-Implement pagination, query limits, loading states, and error states.
-Add frontend tests and end-to-end smoke tests.
+Implement pagination, query limits, loading, empty, success, and error states; never show mock data as live state.
+Ensure administrative configuration changes are backend-validated, authorized, tenant-scoped, and audited where security-relevant.
+Add frontend unit/component tests and end-to-end smoke tests for key management and graph workflows.
+Document and automate a local frontend/backend workflow that can exercise server/agent configuration and configured-versus-observed graph behavior against actual service or telemetry data.
 Acceptance criteria
-The console displays actual backend data.
-Configured and observed topology are distinguishable.
-Graph edges are derived from actual interactions.
-Users cannot query another tenant's telemetry.
+Authorized users can configure and inspect tenants, MCP servers, agents, upstream connections, and policies through the frontend and management APIs.
+Configuration submitted through the frontend is validated and persisted by the backend, with errors shown clearly and sensitive values not exposed.
+The console displays actual backend and telemetry data rather than placeholders.
+Configured and observed topology are visually and semantically distinguishable.
+Observed graph edges represent actual interactions in the selected time range and link to corresponding details where available.
+Users cannot query or modify another tenant's configuration or telemetry.
 Trace details can be correlated with associated logs.
-The UI handles empty results and backend errors correctly.
+The UI handles loading, empty results, and backend errors correctly.
+Frontend tests and end-to-end smoke tests cover the principal management and visualization flows.
+The documented local development workflow starts dependencies, applies migrations, runs services and tests, and verifies key frontend and MCP/A2A flows without relying on production infrastructure.
 11. Milestone 7: Resilience and production hardening
 Tasks
 Add bounded concurrency and backpressure.
@@ -345,21 +357,26 @@ Performance results include workload and environment details.
 Tasks
 Finalize standalone binary and Docker deployment.
 Finalize Docker Compose configuration.
-Create Kubernetes manifests.
-Create and validate Helm charts.
+Create Kubernetes manifests and package the platform in one umbrella Helm chart, including the frontend, gateway, control plane, and enabled in-chart supporting workloads.
+Make the platform chart the standard Kubernetes installation path; a standard deployment must not require users to install separate charts for first-party platform components.
+Provide values for image versions, replicas, resources, ingress/TLS, secrets, persistence, external database/telemetry backends, and optional components without splitting the platform into separate installation operations.
+Validate clean installation, configuration overrides, upgrade, and rollback using a single Helm release and one documented `helm install` command.
+Deploy the complete chart to a disposable local kind or minikube cluster from a clean checkout and run automated readiness and frontend/gateway smoke tests against the installed release.
 Configure readiness, liveness, and startup probes.
 Configure resource requests, limits, and autoscaling.
 Add PodDisruptionBudgets and topology spread constraints.
 Document TLS, secrets, database, and telemetry configuration.
-Test rolling upgrades and rollback.
+Test rolling upgrades and rollback for the single chart release.
 Test database backup and restore.
 Write installation, upgrade, troubleshooting, and operations guides.
 Publish a release checklist and known limitations.
 Acceptance criteria
 Standalone deployment works from documented instructions.
-Kubernetes deployment works from documented instructions.
+Kubernetes deployment installs the complete platform, including its frontend and backend components, using one Helm chart and one `helm install` operation.
+First-party components share one Helm release and can be configured through that chart's values; external infrastructure may be provided by the operator.
 Configuration is validated before production activation.
-Rolling upgrades and rollback have been tested.
+Single-release rolling upgrades and rollback have been tested.
+The one-chart installation and core user-facing workflows pass repeatable local Kubernetes deployment smoke tests, with documented cleanup and troubleshooting steps.
 External dependencies and HA requirements are documented.
 The release has no unacknowledged security-critical placeholders.
 13. Cross-cutting engineering rules
@@ -386,14 +403,14 @@ Maintain this checklist at the end of every coding session:
 
 | Field | Current Status |
 | :--- | :--- |
-| **Current milestone** | Milestone 2: MCP Gateway (Completed & Verified); Preparing for Milestone 3: Identity and Authorization |
-| **Completed tasks** | Milestone 0 (Discovery, Architecture, ADR-0001 through ADR-0008, Risk Register). Milestone 1 (Foundation): 1.1-1.9 complete with dual PostgreSQL/SQLite database support, migrations, health probes, structured logging. Milestone 2 (MCP Gateway): MCP 2024-11-05 protocol implementation, SSE transport (`/mcp/v1/sse`) and HTTP JSON-RPC endpoint (`/mcp/v1/messages`), multi-server registry, catalog aggregator with `<server_prefix>::<tool_name>` namespacing, catalog caching & invalidation, tool routing, upstream resilience bulkheads & circuit breakers, SSRF-safe egress dialer with DNS pinning. |
-| **In progress** | Review of Milestone 2 with user; preparing Milestone 3 (Identity, OAuth 2.1 PKCE, OIDC federation, RBAC/ABAC). |
-| **Blocked** | None. |
-| **Tests executed** | `go test -v ./...` (All tests PASS across packages: `TestLivenessHandler`, `TestReadinessHandlerLifecycle`, `TestDefaultConfigValid`, `TestConfigValidationInvalidPorts`, `TestConfigValidationProductionSecurity`, `TestConfigLoadFromEnv`, `TestLoggerRedactsSensitiveFields`, `TestLoggerPropagatesContext`, `TestCircuitBreakerTripsAndRecovers`, `TestBulkheadConcurrencyLimit`, `TestIsPrivateIP`, `TestSafeDialerBlocksMetadataAndLoopback`, `TestValidateTargetURL`, `TestSQLiteDatabaseMigrationsAndRepository`, `TestMCPGatewayMultiServerAggregationAndRouting`, `TestMCPServerRegistrationDuplicateRejection`, `TestMCPSSEStreamEndpointHandshake`); CLI migration tests; Live HTTP test against running `gateway.exe` sending `initialize` and `ping` JSON-RPC calls. |
-| **Known defects** | None. |
+| **Current milestone** | Milestone 3: Identity and authorization (in progress) |
+| **Completed tasks** | Milestones 0-2 as recorded above. Milestone 3 foundation: tenant-scoped OAuth client/grant/scope model, fail-closed in-memory authorization-code PKCE S256 flow, exact redirect URI and client binding, confidential secret hashing, grant/scope enforcement, and focused tests. This is not production-ready pending maintained OAuth/OIDC integration, authenticated user/consent, and durable storage. |
+| **In progress** | Milestone 3: integrate a maintained OAuth/OIDC implementation and connect the authorization flow to authenticated users/consent. |
+| **Blocked** | Full `go test ./...` is currently blocked by an unused `fmt` import in the unchanged `internal/identity/oidc/federation.go`; focused OAuth, token, and key tests pass. |
+| **Tests executed** | `go test ./internal/identity/oauth ./internal/identity/tokens ./internal/identity/keys` (PASS). `go test ./...` (FAIL: pre-existing compile error, unused `fmt` import in `internal/identity/oidc/federation.go`). `go test -race` for OAuth was unavailable because the local Go toolchain requires CGO for race builds and CGO is disabled. |
+| **Known defects** | Full repository tests cannot compile until the unused import in `internal/identity/oidc/federation.go` is resolved. OAuth authorization codes and clients are currently in-memory; authorization requires a configured authenticated user/consent service. |
 | **Architectural decisions** | ADR-0001 through ADR-0008 active. Pinned MCP version 2024-11-05. |
-| **Next task** | Milestone 3 Task 3.1: Define OAuth clients, tenants, scopes, policies, and PKCE S256 authorization code foundation. |
+| **Next task** | Milestone 3: adopt and integrate the maintained OAuth/OIDC implementation; connect authenticated user/consent and client persistence before exposing the authorization flow. |
 
 15. First action
 

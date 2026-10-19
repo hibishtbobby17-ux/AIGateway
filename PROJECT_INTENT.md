@@ -100,13 +100,15 @@ Telemetry failure must not indefinitely block gateway traffic.
 
 3.5 Management and observability console
 
+The platform must include a web-based management and observability frontend, implemented with React and TypeScript, backed by tenant-aware management APIs. The frontend must allow authorized users to configure and inspect the platform without editing deployment files for routine application configuration.
+
 The console must provide:
 
 Tenant, project, user, and client management.
-MCP server and A2A agent registration.
-Gateway and authorization policy configuration.
-A configured topology graph.
-An observed interaction graph.
+MCP server and A2A agent registration, editing, enablement, and connection health inspection.
+Gateway, upstream connection, and authorization policy configuration, with validation and clear error reporting.
+A configured topology graph showing registered MCP servers, agents, and their configured connections.
+An observed interaction graph showing actual MCP tool calls and A2A communications over a selected time range.
 Distributed trace search and waterfall views.
 Correlated structured log search.
 Traffic, latency, error, and resource metrics.
@@ -115,7 +117,9 @@ Security audit events.
 Health status and alerts.
 Filtering by tenant, environment, service, and time range.
 
-The graph must distinguish configured relationships from observed interactions. Observed edges must be derived from actual telemetry and use time-bounded statistics.
+The graph must distinguish configured relationships from observed interactions. Observed edges must be derived from actual telemetry and use time-bounded statistics. Graphs and detail views must support filtering and navigation to the relevant server, agent, trace, tool call, or task.
+
+Administrative changes made through the frontend must use the same authenticated and authorized management APIs as other administrative clients, be tenant-scoped, validated by the backend, and audited where security-relevant. The frontend must display loading, empty, success, and error states and must not present mock or stale data as live platform state.
 
 3.6 Resilience and availability
 
@@ -143,6 +147,8 @@ Standalone deployment must support:
 Runnable application executables.
 Validated configuration files and environment overrides.
 Docker and Docker Compose.
+Reproducible local development setup with documented start, migration, deploy, test, and cleanup instructions.
+Automated local smoke tests for service readiness and core gateway behavior, extended to frontend workflows and telemetry-backed topology as those features are delivered.
 PostgreSQL integration.
 Configurable telemetry backends.
 Health checks and structured logs.
@@ -151,7 +157,9 @@ Documented installation and upgrade procedures.
 Kubernetes deployment must support:
 
 Separate gateway, control-plane, and telemetry workloads where appropriate.
-Helm charts and standard manifests.
+A single platform Helm chart that installs the complete platform from one Helm installation, including its frontend, gateway, control plane, and enabled in-chart supporting workloads.
+One documented `helm install` operation for a standard installation, with configurable values for replicas, resources, ingress/TLS, secrets, persistence, and optional components.
+Standard Kubernetes resources generated and managed through that chart; external services such as databases or telemetry backends may be selected through configuration rather than requiring separate platform charts.
 TLS and ingress integration.
 Resource requests and limits.
 Readiness, liveness, and startup probes.
@@ -159,7 +167,8 @@ Autoscaling, disruption budgets, and rolling upgrades.
 Secrets integration and external database services.
 Documented high-availability and recovery requirements.
 
-Both deployment modes must use the same application code and configuration model.
+The single chart must install and upgrade the platform as one release while preserving independently scalable workloads. Both deployment modes must use the same application code and configuration model.
+The complete platform deployment must be verifiable on a local Kubernetes environment (such as kind or minikube) from a clean checkout, using the single Helm chart and documented smoke tests.
 
 4. Architectural direction
 
@@ -217,10 +226,11 @@ Discovery and execution enforce authorization.
 Supported OAuth flows and external IdP integrations pass integration tests.
 A2A requests are authenticated, authorized, routed, and observable.
 Instrumented applications and the gateway produce correlated telemetry.
-The console visualizes real traces and observed service interactions.
+The web console allows authorized users to configure and inspect tenants, MCP servers, agents, policies, and connections, and visualizes configured topology separately from real MCP/A2A interactions and traces.
 Multiple gateway replicas operate against shared durable state.
 Failure handling, overload, shutdown, and telemetry outages are tested.
-Standalone and Kubernetes deployments are reproducible.
+Standalone and Kubernetes deployments are reproducible, and a standard Kubernetes installation deploys the complete platform using one Helm chart and one installation operation.
+Developers can start and validate the platform locally using documented commands, and the full chart installation passes a repeatable smoke test on a local Kubernetes cluster.
 Security limitations, recovery procedures, and operational requirements are documented.
 
 This document defines the product's intent. Implementation details belong in IMPLEMENTATION_PLAN.md and architecture decision records.

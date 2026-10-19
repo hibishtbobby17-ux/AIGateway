@@ -22,7 +22,13 @@ To build and run the Go backend, migrations, and test suites across subsequent m
 
 ## 2. Monorepo Development Workflow
 
-### 2.1 Configuration
+### 2.1 Prerequisites
+
+Install Go 1.23+, Docker Desktop or Podman with Compose support, and Git. Node.js 20+ with npm is additionally required to work on the React/TypeScript console. A local Kubernetes distribution such as kind or minikube, together with Helm, is required to verify the Helm installation locally.
+
+Run commands below from the repository root. The PowerShell examples use the same environment variable names on Windows; use the equivalent shell syntax on other operating systems.
+
+### 2.2 Configuration
 Configuration is loaded using a hierarchical provider:
 1. Environment variables (prefixed with `GATEWAY_`)
 2. Configuration file (`configs/gateway.yaml` or `configs/standalone.yaml`)
@@ -52,7 +58,7 @@ GATEWAY_OTLP_GRPC_PORT=4317
 GATEWAY_CLICKHOUSE_URL=http://localhost:8123/default
 ```
 
-### 2.2 Local Storage Services (Docker Compose)
+### 2.3 Local Storage Services (Docker Compose)
 A minimal compose file (`deployments/compose/docker-compose.dev.yaml`) provides local backing services:
 - **PostgreSQL 16**: Port `5432`
 - **ClickHouse**: Ports `8123` (HTTP) and `9000` (Native)
@@ -60,7 +66,71 @@ A minimal compose file (`deployments/compose/docker-compose.dev.yaml`) provides 
 
 ---
 
-## 3. Testing & Verification Plan
+## 3. Deploy and Verify Locally
+
+The following workflow runs the current Go gateway against the local PostgreSQL service. It is also the baseline that frontend, control-plane, and end-to-end tests must extend as those components are implemented.
+
+1. Start the local backing services and wait for their health checks:
+
+   ```powershell
+   docker compose -f deployments/compose/docker-compose.dev.yaml up -d
+   docker compose -f deployments/compose/docker-compose.dev.yaml ps
+   ```
+
+2. Configure the local database connection, then apply migrations:
+
+   ```powershell
+   $env:GATEWAY_DATABASE_DRIVER = "postgres"
+   $env:GATEWAY_DATABASE_URL = "postgres://gateway:gateway@localhost:5432/gateway_dev?sslmode=disable"
+   go run ./cmd/migrate -direction up
+   ```
+
+3. Run the automated Go tests:
+
+   ```powershell
+   go test ./...
+   ```
+
+4. Start the gateway in a separate terminal using the same database environment variables:
+
+   ```powershell
+   go run ./cmd/gateway
+   ```
+
+5. In another terminal, verify the gateway is serving its health and root endpoints:
+
+   ```powershell
+   Invoke-WebRequest http://localhost:8080/healthz
+   Invoke-WebRequest http://localhost:8080/readyz
+   Invoke-RestMethod http://localhost:8080/
+   ```
+
+   `/healthz` and `/readyz` should return HTTP 200 when the service and database are healthy. The root endpoint should report the platform as online. Protocol and upstream-routing behavior is verified by the automated MCP integration tests; a live communication graph is only meaningful once telemetry-backed topology is implemented.
+
+6. Open Jaeger at `http://localhost:16686` to inspect locally exported traces when telemetry instrumentation/export is available.
+
+Stop the backing services when finished:
+
+```powershell
+docker compose -f deployments/compose/docker-compose.dev.yaml down
+```
+
+The default `down` command preserves named database volumes. Do not use `-v` unless intentionally discarding local database and ClickHouse data.
+
+### 3.1 Local frontend and Helm deployment verification
+
+When the console and platform Helm chart are implemented, extend this workflow with repeatable automated checks that:
+
+- Start the frontend with the documented local development command and verify the application loads and can authenticate against the local management API.
+- Exercise server/agent configuration, configured topology, and telemetry-backed observed interactions using test fixtures or disposable local services; assert that the UI shows backend data and distinguishes configured from observed connections.
+- Deploy the complete platform to a disposable kind or minikube cluster using the documented single-chart, single-`helm install` procedure, wait for all required workloads to become ready, and smoke-test the frontend and gateway endpoints.
+- Clean up the local Helm release and cluster resources without requiring separate installation steps for first-party platform components.
+
+Keep these local checks runnable from a clean checkout and document required environment variables, expected endpoints, and failure diagnostics. Do not mark local deployment or end-to-end acceptance criteria complete based on unit tests alone.
+
+---
+
+## 4. Testing & Verification Plan
 
 The platform enforces a multi-tier testing strategy:
 1. **Unit Tests**:
@@ -80,3 +150,6 @@ The platform enforces a multi-tier testing strategy:
    - `golangci-lint run`
    - `gosec -quiet ./...`
    - `govulncheck ./...`
+6. **Local deployment smoke tests**:
+   - Start dependencies with the documented Compose workflow and verify migrations, service health, and gateway responses.
+   - Once available, run frontend end-to-end tests and install/smoke-test the complete chart in a disposable local Kubernetes cluster.
