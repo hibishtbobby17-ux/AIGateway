@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/hex"
 	"os"
 	"strings"
 	"testing"
@@ -51,10 +52,12 @@ func TestConfigLoadFromEnv(t *testing.T) {
 	os.Setenv("GATEWAY_SERVER_PORT", "9090")
 	os.Setenv("GATEWAY_ADMIN_PORT", "9091")
 	os.Setenv("GATEWAY_JWT_ISSUER", "https://auth.enterprise.com")
+	os.Setenv("GATEWAY_SIGNING_KEY_ENCRYPTION_KEY", strings.Repeat("ab", 32))
 	defer func() {
 		os.Unsetenv("GATEWAY_SERVER_PORT")
 		os.Unsetenv("GATEWAY_ADMIN_PORT")
 		os.Unsetenv("GATEWAY_JWT_ISSUER")
+		os.Unsetenv("GATEWAY_SIGNING_KEY_ENCRYPTION_KEY")
 	}()
 
 	cfg := NewDefaultConfig()
@@ -68,5 +71,29 @@ func TestConfigLoadFromEnv(t *testing.T) {
 	}
 	if cfg.Security.JWTIssuer != "https://auth.enterprise.com" {
 		t.Errorf("expected JWTIssuer to be updated, got: %s", cfg.Security.JWTIssuer)
+	}
+	signingKey, err := cfg.SigningKeyEncryptionKey()
+	if err != nil {
+		t.Fatalf("decode signing key encryption key: %v", err)
+	}
+	if got := hex.EncodeToString(signingKey); got != strings.Repeat("ab", 32) {
+		t.Errorf("decoded signing key encryption key = %q", got)
+	}
+}
+
+func TestSigningKeyEncryptionKeyValidation(t *testing.T) {
+	cfg := NewDefaultConfig()
+	if _, err := cfg.SigningKeyEncryptionKey(); err == nil {
+		t.Fatal("expected missing signing key encryption key to fail decoding")
+	}
+	for _, value := range []string{"not-hex", strings.Repeat("a", 62), strings.Repeat("a", 64) + "00"} {
+		cfg.Security.SigningKeyEncryptionKeyHex = value
+		if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "64 hexadecimal characters") {
+			t.Errorf("Validate() error for %q = %v, want exact-length hex error", value, err)
+		}
+	}
+	cfg.Security.SigningKeyEncryptionKeyHex = strings.Repeat("ab", 32)
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("valid 32-byte hex encryption key rejected: %v", err)
 	}
 }

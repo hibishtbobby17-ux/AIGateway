@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -46,10 +47,11 @@ type AdminConfig struct {
 
 // SecurityConfig holds secret keys, encryption keys, and network safety parameters.
 type SecurityConfig struct {
-	EncryptionKey      string   `json:"encryption_key" yaml:"encryption_key"` // 32-byte hex for AES-256
-	JWTIssuer          string   `json:"jwt_issuer" yaml:"jwt_issuer"`
-	AllowLocalEgress   bool     `json:"allow_local_egress" yaml:"allow_local_egress"` // Prohibited in production
-	EgressAllowedCIDRs []string `json:"egress_allowed_cidrs" yaml:"egress_allowed_cidrs"`
+	EncryptionKey              string   `json:"encryption_key" yaml:"encryption_key"` // 32-byte hex for AES-256
+	SigningKeyEncryptionKeyHex string   `json:"-" yaml:"-"`                           // 32-byte hex supplied out of band
+	JWTIssuer                  string   `json:"jwt_issuer" yaml:"jwt_issuer"`
+	AllowLocalEgress           bool     `json:"allow_local_egress" yaml:"allow_local_egress"` // Prohibited in production
+	EgressAllowedCIDRs         []string `json:"egress_allowed_cidrs" yaml:"egress_allowed_cidrs"`
 }
 
 // DatabaseConfig holds PostgreSQL or SQLite connection parameters.
@@ -64,10 +66,10 @@ type DatabaseConfig struct {
 
 // TelemetryConfig holds OTLP and storage endpoints.
 type TelemetryConfig struct {
-	OTLPHTTPPort  int    `json:"otlp_http_port" yaml:"otlp_http_port"`
-	OTLPGRPCPort  int    `json:"otlp_grpc_port" yaml:"otlp_grpc_port"`
-	ClickHouseURL string `json:"clickhouse_url" yaml:"clickhouse_url"`
-	PrometheusPort int   `json:"prometheus_port" yaml:"prometheus_port"`
+	OTLPHTTPPort   int    `json:"otlp_http_port" yaml:"otlp_http_port"`
+	OTLPGRPCPort   int    `json:"otlp_grpc_port" yaml:"otlp_grpc_port"`
+	ClickHouseURL  string `json:"clickhouse_url" yaml:"clickhouse_url"`
+	PrometheusPort int    `json:"prometheus_port" yaml:"prometheus_port"`
 }
 
 // ResilienceConfig holds defaults for bulkheads and rate limits.
@@ -140,6 +142,9 @@ func (c *Config) LoadFromEnv() {
 	if v := os.Getenv("GATEWAY_ENCRYPTION_KEY"); v != "" {
 		c.Security.EncryptionKey = v
 	}
+	if v := os.Getenv("GATEWAY_SIGNING_KEY_ENCRYPTION_KEY"); v != "" {
+		c.Security.SigningKeyEncryptionKeyHex = v
+	}
 	if v := os.Getenv("GATEWAY_JWT_ISSUER"); v != "" {
 		c.Security.JWTIssuer = v
 	}
@@ -189,6 +194,11 @@ func (c *Config) Validate() error {
 	if c.Security.JWTIssuer == "" {
 		errs = append(errs, "jwt_issuer cannot be empty")
 	}
+	if c.Security.SigningKeyEncryptionKeyHex != "" {
+		if _, err := c.SigningKeyEncryptionKey(); err != nil {
+			errs = append(errs, err.Error())
+		}
+	}
 
 	// In production, enforce cryptographic requirements and security boundaries
 	if c.Environment == EnvProduction {
@@ -210,4 +220,17 @@ func (c *Config) Validate() error {
 		return errors.New("configuration validation errors: " + strings.Join(errs, "; "))
 	}
 	return nil
+}
+
+// SigningKeyEncryptionKey decodes the out-of-band 256-bit key used to encrypt
+// persisted signing keys. It is intentionally not serialized in config output.
+func (c *Config) SigningKeyEncryptionKey() ([]byte, error) {
+	if c.Security.SigningKeyEncryptionKeyHex == "" {
+		return nil, errors.New("signing key encryption key is not configured")
+	}
+	key, err := hex.DecodeString(c.Security.SigningKeyEncryptionKeyHex)
+	if err != nil || len(key) != 32 {
+		return nil, errors.New("signing key encryption key must be exactly 64 hexadecimal characters (32 bytes)")
+	}
+	return key, nil
 }

@@ -44,6 +44,8 @@ GATEWAY_ENVIRONMENT=development
 
 # Security
 GATEWAY_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+# Required only when enabling persistent OAuth signing keys. Keep out of config files and share securely across replicas.
+GATEWAY_SIGNING_KEY_ENCRYPTION_KEY=<64-character-hex-secret-from-a-secret-manager>
 GATEWAY_JWT_ISSUER=https://gateway.local
 GATEWAY_ALLOW_LOCAL_EGRESS=true # Only in local development
 
@@ -57,6 +59,16 @@ GATEWAY_OTLP_HTTP_PORT=4318
 GATEWAY_OTLP_GRPC_PORT=4317
 GATEWAY_CLICKHOUSE_URL=http://localhost:8123/default
 ```
+
+Generate a local-only key in PowerShell (do not use this generated value in production):
+
+```powershell
+$bytes = New-Object byte[] 32
+[System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+$env:GATEWAY_SIGNING_KEY_ENCRYPTION_KEY = [Convert]::ToHexString($bytes).ToLowerInvariant()
+```
+
+The signing-key encryption value is intentionally excluded from serialized config. Production deployments must inject the same randomly generated 32-byte key into every replica via a secret manager; losing or changing it makes previously persisted private signing keys unreadable.
 
 ### 2.3 Local Storage Services (Docker Compose)
 A minimal compose file (`deployments/compose/docker-compose.dev.yaml`) provides local backing services:

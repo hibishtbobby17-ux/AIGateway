@@ -36,5 +36,5 @@ Resource-owner authentication and consent must be provided by a trusted identity
 
 - Fosite adds a larger dependency graph and requires adapters for platform-specific client and session persistence.
 - The provider cannot be safely exposed until the platform persists and shares signing keys, wires authenticated user/consent, and ensures token revocation is enforced by resource servers.
-- Deployments must provision and consistently distribute a 32-byte signing-key encryption secret outside the SQL database. This component does not yet define secret-manager integration or old-key retirement policy.
+- Deployments must provision and consistently distribute a 32-byte signing-key encryption secret outside the SQL database (environment variable `GATEWAY_SIGNING_KEY_ENCRYPTION_KEY`, encoded as exactly 64 hexadecimal characters). The secret is excluded from config serialization. This component does not yet define secret-manager integration or old-key retirement policy.
 - This decision implements OAuth protocol handling, not the complete built-in identity provider or external OIDC federation.

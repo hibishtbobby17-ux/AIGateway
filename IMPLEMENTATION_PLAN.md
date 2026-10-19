@@ -409,7 +409,7 @@ Maintain this checklist at the end of every coding session:
 | :--- | :--- |
 | **Current milestone** | Milestone 3: Identity and authorization (in progress) |
 | **Completed tasks** | Milestones 0-2 as recorded above. Milestone 3 OAuth framework slice: Fosite provider component with authorization-code/PKCE and client-credentials endpoints, SQL-backed clients and token grant state, hashed client secrets, tenant-aware authorization-service hook, ES256 tokens compatible with the verifier, encrypted shared SQL signing-key storage with refresh-on-read rotation/JWKS, and focused persistence/protocol tests. |
-| **In progress** | Connect authenticated-user/consent and external OIDC flows; integrate managed provisioning for the signing-key encryption secret. |
+| **In progress** | Connect authenticated-user/consent and external OIDC flows; integrate a production secret manager for the shared signing-key encryption secret (environment-based local/deployment injection is documented). |
 | **Blocked** | No user/consent implementation exists yet, so the provider component is not mounted by the runtime executables. Authorization requests fail closed without the injected service. |
 | **Tests executed** | `go test ./...`, `go vet ./...`, focused key/OAuth/storage/migration tests, and `git diff --check` pass. Race tests are unavailable because the local Go toolchain requires CGO for race builds and CGO is disabled. |
 | **Known defects** | OAuth provider endpoints are not yet wired into the control-plane runtime; production key-encryption secret provisioning and old-key retirement policy are not integrated. External OIDC discovery, concrete user authentication/consent, and durable revocation enforcement remain incomplete. |
