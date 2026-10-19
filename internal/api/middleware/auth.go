@@ -105,7 +105,7 @@ func isPublicEndpoint(p string) bool {
 	if strings.HasPrefix(p, "/.well-known/") {
 		return true
 	}
-	if strings.HasPrefix(p, "/oauth/") {
+	if p == "/oauth/token" || p == "/oauth/revoke" {
 		return true
 	}
 	return false

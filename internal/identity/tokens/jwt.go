@@ -46,6 +46,54 @@ type Claims struct {
 	TokenID   string   `json:"jti"`
 }
 
+func (c *Claims) UnmarshalJSON(data []byte) error {
+	var wire struct {
+		Issuer    string          `json:"iss"`
+		Subject   string          `json:"sub"`
+		Audience  json.RawMessage `json:"aud"`
+		TenantID  string          `json:"tenant_id"`
+		Scopes    []string        `json:"scopes"`
+		ScopeList []string        `json:"scp"`
+		Scope     string          `json:"scope"`
+		Roles     []string        `json:"roles"`
+		IssuedAt  int64           `json:"iat"`
+		ExpiresAt int64           `json:"exp"`
+		TokenID   string          `json:"jti"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	var audience string
+	if len(wire.Audience) > 0 && string(wire.Audience) != "null" {
+		if err := json.Unmarshal(wire.Audience, &audience); err != nil {
+			var audiences []string
+			if listErr := json.Unmarshal(wire.Audience, &audiences); listErr != nil || len(audiences) != 1 {
+				return fmt.Errorf("invalid JWT audience claim")
+			}
+			audience = audiences[0]
+		}
+	}
+	scopes := wire.Scopes
+	if len(scopes) == 0 {
+		scopes = wire.ScopeList
+	}
+	if len(scopes) == 0 && wire.Scope != "" {
+		scopes = strings.Fields(wire.Scope)
+	}
+	*c = Claims{
+		Issuer:    wire.Issuer,
+		Subject:   wire.Subject,
+		Audience:  audience,
+		TenantID:  wire.TenantID,
+		Scopes:    scopes,
+		Roles:     wire.Roles,
+		IssuedAt:  wire.IssuedAt,
+		ExpiresAt: wire.ExpiresAt,
+		TokenID:   wire.TokenID,
+	}
+	return nil
+}
+
 // Sign creates an ES256-signed JWT token string.
 func Sign(claims *Claims, key *keys.KeyPair) (string, error) {
 	if claims == nil || key == nil {
@@ -217,7 +265,7 @@ func (v *Verifier) Verify(tokenString string) (*Claims, error) {
 	}
 
 	// Check audience if configured
-	if v.expectedAudience != "" && claims.Audience != "" && claims.Audience != v.expectedAudience {
+	if v.expectedAudience != "" && claims.Audience != v.expectedAudience {
 		return nil, fmt.Errorf("%w: token aud %q != expected %q", ErrInvalidAudience, claims.Audience, v.expectedAudience)
 	}
 

@@ -102,11 +102,20 @@ func MigrateDown(ctx context.Context, db *sql.DB) error {
 		return fmt.Errorf("db cannot be nil")
 	}
 
-	content, err := MigrationFS.ReadFile("000001_init_schema.down.sql")
+	var version string
+	err := db.QueryRowContext(ctx, "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1").Scan(&version)
 	if err != nil {
-		return fmt.Errorf("failed to read down migration: %w", err)
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		return fmt.Errorf("failed to read latest schema migration: %w", err)
 	}
 
+	filename := version + ".down.sql"
+	content, err := MigrationFS.ReadFile(filename)
+	if err != nil {
+		return fmt.Errorf("failed to read down migration %s: %w", filename, err)
+	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin rollback transaction: %w", err)
@@ -124,8 +133,12 @@ func MigrateDown(ctx context.Context, db *sql.DB) error {
 		}
 	}
 
-	// Clean tracking table if exists
-	_, _ = tx.ExecContext(ctx, "DELETE FROM schema_migrations")
+	if _, err := tx.ExecContext(ctx, "DELETE FROM schema_migrations WHERE version = $1", version); err != nil {
+		if _, fallbackErr := tx.ExecContext(ctx, "DELETE FROM schema_migrations WHERE version = ?", version); fallbackErr != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("failed to remove rolled back migration %s: %w", version, fallbackErr)
+		}
+	}
 
 	return tx.Commit()
 }

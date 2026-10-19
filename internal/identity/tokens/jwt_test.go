@@ -109,4 +109,15 @@ func TestJWTIssuerAndAudienceValidation(t *testing.T) {
 	if !errors.Is(err, ErrInvalidAudience) {
 		t.Errorf("expected ErrInvalidAudience, got: %v", err)
 	}
+
+	// A configured audience must also reject tokens that omit the aud claim.
+	c3 := &Claims{
+		Issuer:    "https://expected-issuer.com",
+		ExpiresAt: time.Now().Add(1 * time.Hour).Unix(),
+	}
+	t3, _ := Sign(c3, activeKey)
+	_, err = verifier.Verify(t3)
+	if !errors.Is(err, ErrInvalidAudience) {
+		t.Errorf("expected ErrInvalidAudience for missing aud, got: %v", err)
+	}
 }

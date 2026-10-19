@@ -34,6 +34,7 @@ All architectural decisions, threat models, and domain specifications are docume
 - [ADR-0006: Primary Persistence & Database Migration Strategy](file:///c:/Users/Administrator/Downloads/project/project_alpha/docs/adr/0006-persistence-and-migration-strategy.md)
 - [ADR-0007: Outbound Networking & SSRF Mitigation Strategy](file:///c:/Users/Administrator/Downloads/project/project_alpha/docs/adr/0007-outbound-networking-ssrf-mitigation.md)
 - [ADR-0008: Resilience, Bulkheads & Concurrency Control](file:///c:/Users/Administrator/Downloads/project/project_alpha/docs/adr/0008-resilience-and-concurrency-management.md)
+- [ADR-0009: OAuth Authorization Server Framework & Persistence](file:///c:/Users/Administrator/Downloads/project/project_alpha/docs/adr/0009-oauth-authorization-server.md)
 
 ---
 

@@ -122,6 +122,12 @@ func TestSQLiteDatabaseMigrationsAndRepository(t *testing.T) {
 
 	// 5. Test Rollback (MigrateDown)
 	if err := migrations.MigrateDown(ctx, db); err != nil {
-		t.Fatalf("failed running MigrateDown: %v", err)
+		t.Fatalf("failed rolling back signing key migration: %v", err)
+	}
+	if err := migrations.MigrateDown(ctx, db); err != nil {
+		t.Fatalf("failed rolling back OAuth migration: %v", err)
+	}
+	if err := migrations.MigrateDown(ctx, db); err != nil {
+		t.Fatalf("failed rolling back initial migration: %v", err)
 	}
 }

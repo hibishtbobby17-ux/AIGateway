@@ -3,7 +3,6 @@ package oidc
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 )
 

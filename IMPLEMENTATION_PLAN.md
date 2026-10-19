@@ -141,6 +141,7 @@ Deliverables
   - [`docs/adr/0006-persistence-and-migration-strategy.md`](docs/adr/0006-persistence-and-migration-strategy.md)
   - [`docs/adr/0007-outbound-networking-ssrf-mitigation.md`](docs/adr/0007-outbound-networking-ssrf-mitigation.md)
   - [`docs/adr/0008-resilience-and-concurrency-management.md`](docs/adr/0008-resilience-and-concurrency-management.md)
+  - [`docs/adr/0009-oauth-authorization-server.md`](docs/adr/0009-oauth-authorization-server.md)
 
 Exit criteria
 The architecture has explicit trust boundaries, clear state ownership, a documented dependency strategy, and no unresolved design decision that would invalidate the first vertical slice. (Milestone 0 verified and complete).
@@ -228,27 +229,30 @@ Acceptance criteria
 7. Milestone 3: Identity and authorization
 Tasks
 - [x] Define the baseline tenant-scoped OAuth client, grant, redirect URI, scope, issuer/audience, and policy models.
-- [x] Add a fail-closed in-memory authorization-code/PKCE foundation with client and scope validation; authenticated user/consent integration and durable storage remain outstanding.
-- [ ] Integrate a maintained OAuth/OIDC implementation for production protocol handling.
-- [ ] Implement and integrate the production authorization-code flow with PKCE S256.
-- [ ] Implement client credentials for confidential clients.
+- [x] Integrate ORY Fosite for composed OAuth authorization-code and client-credentials endpoint handling with PKCE S256.
+- [x] Add SQL persistence for tenant-scoped client registrations, confidential secret hashes, authorization-code/PKCE state, access/refresh sessions, and client-assertion replay IDs.
+- [x] Provide an injectable authorization/consent boundary and fail closed when it is not configured; a concrete user authentication and consent workflow remains outstanding.
+- [x] Issue Fosite ES256 JWT access tokens with key IDs and tenant/scope claims compatible with the platform verifier.
+- [ ] Wire the provider into runtime endpoints after shared signing-key persistence and authenticated user/consent are available.
 - [ ] Integrate external OIDC discovery and issuer validation.
 - [ ] Add provider configuration and claim mapping.
 - [ ] Implement the built-in IdP foundation.
-- [ ] Define signing-key storage, JWKS publication, and rotation.
+- [x] Define signing-key storage, JWKS publication, and rotation with AES-256-GCM encrypted private keys in shared SQL and refresh-on-read across replicas; deployments must supply a shared 32-byte encryption key.
 - [ ] Implement secure token validation and revocation semantics.
 - [ ] Implement RBAC and extensible ABAC authorization.
 - [ ] Enforce discovery-time and invocation-time authorization.
 - [ ] Implement downstream credential selection and delegated authentication.
 - [ ] Add administrative authorization and audit events.
-- [x] Add focused tests for PKCE S256, one-time/client-bound authorization codes, confidential and public client constraints, scope boundaries, and fail-closed authorization.
+- [x] Add focused tests for Fosite PKCE S256, durable code redemption across provider recreation, confidential and public client constraints, scope boundaries, secret hashing, JWT verification, and migrations.
 - [ ] Add tenant-isolation and broader OAuth security tests.
 Acceptance criteria
 Valid supported clients authenticate successfully.
 Invalid issuers, audiences, redirect URIs, and token signatures are rejected.
 PKCE validation is enforced.
-Authorization requests fail closed unless an authenticated user/consent authorization service is configured; the current in-memory flow is foundation code, not production-ready.
-Authorization codes are single-use, bound to the registered client and exact redirect URI, and confidential client secrets are not retained or exposed in plaintext.
+Authorization requests fail closed unless a trusted authenticated user/consent authorization service is configured.
+Authorization codes are single-use, bound to the registered client and exact redirect URI, and authorization/PKCE state persists in SQL.
+Confidential client secrets are bcrypt-hashed by the default Fosite hasher and are never retained or exposed in plaintext; deployments can supply a stronger Fosite-compatible hasher.
+Fosite-issued ES256 access tokens pass the platform verifier with required issuer, audience, tenant, role, and scope claims.
 Client credentials cannot exceed their assigned permissions.
 Unauthorized tools are hidden from discovery where appropriate and always denied at invocation.
 Downstream credentials are selected according to explicit trust configuration.
@@ -404,13 +408,13 @@ Maintain this checklist at the end of every coding session:
 | Field | Current Status |
 | :--- | :--- |
 | **Current milestone** | Milestone 3: Identity and authorization (in progress) |
-| **Completed tasks** | Milestones 0-2 as recorded above. Milestone 3 foundation: tenant-scoped OAuth client/grant/scope model, fail-closed in-memory authorization-code PKCE S256 flow, exact redirect URI and client binding, confidential secret hashing, grant/scope enforcement, and focused tests. This is not production-ready pending maintained OAuth/OIDC integration, authenticated user/consent, and durable storage. |
-| **In progress** | Milestone 3: integrate a maintained OAuth/OIDC implementation and connect the authorization flow to authenticated users/consent. |
-| **Blocked** | Full `go test ./...` is currently blocked by an unused `fmt` import in the unchanged `internal/identity/oidc/federation.go`; focused OAuth, token, and key tests pass. |
-| **Tests executed** | `go test ./internal/identity/oauth ./internal/identity/tokens ./internal/identity/keys` (PASS). `go test ./...` (FAIL: pre-existing compile error, unused `fmt` import in `internal/identity/oidc/federation.go`). `go test -race` for OAuth was unavailable because the local Go toolchain requires CGO for race builds and CGO is disabled. |
-| **Known defects** | Full repository tests cannot compile until the unused import in `internal/identity/oidc/federation.go` is resolved. OAuth authorization codes and clients are currently in-memory; authorization requires a configured authenticated user/consent service. |
-| **Architectural decisions** | ADR-0001 through ADR-0008 active. Pinned MCP version 2024-11-05. |
-| **Next task** | Milestone 3: adopt and integrate the maintained OAuth/OIDC implementation; connect authenticated user/consent and client persistence before exposing the authorization flow. |
+| **Completed tasks** | Milestones 0-2 as recorded above. Milestone 3 OAuth framework slice: Fosite provider component with authorization-code/PKCE and client-credentials endpoints, SQL-backed clients and token grant state, hashed client secrets, tenant-aware authorization-service hook, ES256 tokens compatible with the verifier, encrypted shared SQL signing-key storage with refresh-on-read rotation/JWKS, and focused persistence/protocol tests. |
+| **In progress** | Connect authenticated-user/consent and external OIDC flows; integrate managed provisioning for the signing-key encryption secret. |
+| **Blocked** | No user/consent implementation exists yet, so the provider component is not mounted by the runtime executables. Authorization requests fail closed without the injected service. |
+| **Tests executed** | `go test ./...`, `go vet ./...`, focused key/OAuth/storage/migration tests, and `git diff --check` pass. Race tests are unavailable because the local Go toolchain requires CGO for race builds and CGO is disabled. |
+| **Known defects** | OAuth provider endpoints are not yet wired into the control-plane runtime; production key-encryption secret provisioning and old-key retirement policy are not integrated. External OIDC discovery, concrete user authentication/consent, and durable revocation enforcement remain incomplete. |
+| **Architectural decisions** | ADR-0001 through ADR-0009 active. Pinned MCP version 2024-11-05. |
+| **Next task** | Implement a concrete authenticated user/consent service and managed signing-key secret provisioning, then mount the Fosite routes in the control plane. |
 
 15. First action
 
