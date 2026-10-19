@@ -1,0 +1,34 @@
+environment: development
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  read_timeout: 15s
+  write_timeout: 30s
+  idle_timeout: 60s
+
+admin:
+  host: "0.0.0.0"
+  port: 8081
+
+security:
+  jwt_issuer: "https://gateway.local"
+  allow_local_egress: true # Enabled strictly for local development
+  encryption_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+database:
+  url: "postgres://gateway:gateway@localhost:5432/gateway_dev?sslmode=disable"
+  max_conns: 25
+  min_conns: 5
+  max_conn_idle_time: 15m
+  max_conn_lifetime: 1h
+
+telemetry:
+  otlp_http_port: 4318
+  otlp_grpc_port: 4317
+  clickhouse_url: "http://localhost:8123/default"
+  prometheus_port: 9090
+
+resilience:
+  default_upstream_timeout_ms: 10000
+  default_concurrency_limit: 50

@@ -1,0 +1,19 @@
+run:
+  timeout: 5m
+  issues-exit-code: 1
+  tests: true
+
+linters:
+  enable:
+    - govet
+    - errcheck
+    - staticcheck
+    - unused
+    - ineffassign
+    - misspell
+    - gosec
+
+linters-settings:
+  gosec:
+    excludes:
+      - G101 # Allow test mock credentials in test files
