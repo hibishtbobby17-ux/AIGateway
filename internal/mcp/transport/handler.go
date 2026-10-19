@@ -7,16 +7,19 @@ import (
 	"io"
 	"net/http"
 
+	"project_alpha/internal/api/middleware"
 	"project_alpha/internal/mcp/aggregation"
 	"project_alpha/internal/mcp/protocol"
 	"project_alpha/internal/mcp/session"
 	"project_alpha/internal/observability/correlation"
+	"project_alpha/internal/policy"
 )
 
 // GatewayHandler handles MCP SSE and HTTP message routing.
 type GatewayHandler struct {
 	aggregator      *aggregation.Aggregator
 	sessions        *session.Manager
+	policyEngine    *policy.Engine
 	defaultTenantID string
 }
 
@@ -30,6 +33,11 @@ func NewGatewayHandler(agg *aggregation.Aggregator, sess *session.Manager, defau
 		sessions:        sess,
 		defaultTenantID: defaultTenantID,
 	}
+}
+
+// SetPolicyEngine attaches a policy engine for dual-phase discovery and execution authorization.
+func (h *GatewayHandler) SetPolicyEngine(pe *policy.Engine) {
+	h.policyEngine = pe
 }
 
 // HandleSSE establishes a persistent Server-Sent Events (SSE) stream for an MCP client.
@@ -140,6 +148,30 @@ func (h *GatewayHandler) dispatchMethod(ctx context.Context, tenantID string, re
 		if err != nil {
 			return protocol.NewErrorResponse(req.ID, protocol.CodeInternalError, fmt.Sprintf("failed listing tools: %v", err), nil)
 		}
+
+		// Phase 1 (Discovery Authorization): Filter tools visible to caller
+		if h.policyEngine != nil {
+			subject := middleware.GetSubject(ctx)
+			roles := middleware.GetRoles(ctx)
+			scopes := middleware.GetScopes(ctx)
+
+			var filtered []protocol.Tool
+			for _, tool := range res.Tools {
+				evalCtx := &policy.Context{
+					Subject:  subject,
+					TenantID: tenantID,
+					Roles:    roles,
+					Scopes:   scopes,
+					Action:   policy.ActionMCPToolsDiscover,
+					Resource: tool.Name,
+				}
+				if h.policyEngine.IsAllowed(ctx, evalCtx) {
+					filtered = append(filtered, tool)
+				}
+			}
+			res.Tools = filtered
+		}
+
 		resp, _ := protocol.NewResponse(req.ID, res)
 		return resp
 
@@ -150,6 +182,25 @@ func (h *GatewayHandler) dispatchMethod(ctx context.Context, tenantID string, re
 		}
 		if params.Name == "" {
 			return protocol.NewErrorResponse(req.ID, protocol.CodeInvalidParams, "tool name cannot be empty", nil)
+		}
+
+		// Phase 2 (Execution Authorization): Independent check at invocation time
+		if h.policyEngine != nil {
+			subject := middleware.GetSubject(ctx)
+			roles := middleware.GetRoles(ctx)
+			scopes := middleware.GetScopes(ctx)
+
+			evalCtx := &policy.Context{
+				Subject:  subject,
+				TenantID: tenantID,
+				Roles:    roles,
+				Scopes:   scopes,
+				Action:   policy.ActionMCPToolsCall,
+				Resource: params.Name,
+			}
+			if !h.policyEngine.IsAllowed(ctx, evalCtx) {
+				return protocol.NewErrorResponse(req.ID, protocol.CodeUnauthorized, fmt.Sprintf("unauthorized: caller not permitted to invoke tool %q", params.Name), nil)
+			}
 		}
 
 		res, err := h.aggregator.CallTool(ctx, tenantID, params.Name, params.Arguments)
