@@ -71,7 +71,7 @@ docker-build:
 ## compose-up: Start full platform in background
 compose-up:
 	@echo "Starting Docker Compose platform..."
-	docker compose -f $(COMPOSE_FILE) up -d
+	docker compose -f $(COMPOSE_FILE) up -d --build
 	@echo "Platform started. Gateway: http://localhost:8080, Console: http://localhost:8081"
 
 ## compose-down: Stop full platform

@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
     endpoint_url TEXT,
     command TEXT,
     auth_type TEXT NOT NULL DEFAULT 'NONE',
-    encrypted_auth_credentials BLOB,
+    encrypted_auth_credentials BYTEA,
     timeout_ms INTEGER NOT NULL DEFAULT 10000,
     concurrency_limit INTEGER NOT NULL DEFAULT 50,
     health_status TEXT NOT NULL DEFAULT 'UNKNOWN',
@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS agents (
     agent_card TEXT NOT NULL,
     protocol_version TEXT NOT NULL DEFAULT 'a2a/v1',
     auth_type TEXT NOT NULL DEFAULT 'NONE',
-    encrypted_auth_credentials BLOB,
+    encrypted_auth_credentials BYTEA,
     health_status TEXT NOT NULL DEFAULT 'HEALTHY',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(tenant_id, name)
