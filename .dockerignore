@@ -1,0 +1,15 @@
+.git
+.github
+.agents
+.gemini
+bin/
+dist/
+tmp/
+*.exe
+*.test
+*.out
+coverage.html
+web/node_modules/
+web/dist/
+deployments/compose/postgres_data/
+deployments/compose/clickhouse_data/

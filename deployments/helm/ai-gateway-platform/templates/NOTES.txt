@@ -1,0 +1,32 @@
+=============================================================================
+  AI Gateway and Observability Platform deployed successfully!
+=============================================================================
+
+1. AI Gateway Endpoint:
+{{- if .Values.ingress.enabled }}
+  Public URL: https://{{ .Values.ingress.hosts.gateway.host }}
+{{- else }}
+  Forward port to access the AI Gateway locally:
+  $ kubectl port-forward svc/{{ include "ai-gateway-platform.fullname" . }}-gateway {{ .Values.gateway.service.port }}:{{ .Values.gateway.service.port }}
+  Gateway endpoint: http://127.0.0.1:{{ .Values.gateway.service.port }}
+{{- end }}
+
+2. Management and Observability Web Console:
+{{- if .Values.ingress.enabled }}
+  Console URL: https://{{ .Values.ingress.hosts.console.host }}
+{{- else }}
+  Forward port to access the Web Console locally:
+  $ kubectl port-forward svc/{{ include "ai-gateway-platform.fullname" . }}-control-plane {{ .Values.controlPlane.service.port }}:{{ .Values.controlPlane.service.port }}
+  Console endpoint: http://127.0.0.1:{{ .Values.controlPlane.service.port }}
+{{- end }}
+
+3. Prometheus Metrics:
+  $ kubectl port-forward svc/{{ include "ai-gateway-platform.fullname" . }}-gateway {{ .Values.gateway.service.metricsPort }}:{{ .Values.gateway.service.metricsPort }}
+  Metrics endpoint: http://127.0.0.1:{{ .Values.gateway.service.metricsPort }}/metrics
+
+4. Health Probes:
+  - Startup:   http://127.0.0.1:{{ .Values.gateway.service.port }}/startupz
+  - Liveness:  http://127.0.0.1:{{ .Values.gateway.service.port }}/healthz
+  - Readiness: http://127.0.0.1:{{ .Values.gateway.service.port }}/readyz
+
+For operational procedures and runbooks, refer to docs/operations/runbooks.md.

@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ai-gateway-platform.fullname" . }}-control-plane
+  labels:
+    {{- include "ai-gateway-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: control-plane
+spec:
+  {{- if not .Values.controlPlane.autoscaling.enabled }}
+  replicas: {{ .Values.controlPlane.replicaCount }}
+  {{- end }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "ai-gateway-platform.controlPlane.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.controlPlane.service.port | quote }}
+        prometheus.io/path: "/metrics"
+      labels:
+        {{- include "ai-gateway-platform.controlPlane.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "ai-gateway-platform.fullname" . }}
+      securityContext:
+        {{- toYaml .Values.controlPlane.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.controlPlane.terminationGracePeriodSeconds }}
+      {{- if .Values.controlPlane.topologySpreadConstraints.enabled }}
+      topologySpreadConstraints:
+        - maxSkew: {{ .Values.controlPlane.topologySpreadConstraints.maxSkew }}
+          topologyKey: {{ .Values.controlPlane.topologySpreadConstraints.topologyKey }}
+          whenUnsatisfiable: {{ .Values.controlPlane.topologySpreadConstraints.whenUnsatisfiable }}
+          labelSelector:
+            matchLabels:
+              {{- include "ai-gateway-platform.controlPlane.selectorLabels" . | nindent 14 }}
+      {{- end }}
+      containers:
+        - name: control-plane
+          image: "{{ .Values.controlPlane.image.repository }}:{{ .Values.controlPlane.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.controlPlane.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.controlPlane.securityContext | nindent 12 }}
+          ports:
+            - name: http-admin
+              containerPort: {{ .Values.controlPlane.service.port }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "ai-gateway-platform.fullname" . }}-config
+            - secretRef:
+                name: {{ include "ai-gateway-platform.fullname" . }}-secret
+          startupProbe:
+            httpGet:
+              path: {{ .Values.controlPlane.probes.startup.path }}
+              port: {{ .Values.controlPlane.probes.startup.port }}
+            initialDelaySeconds: {{ .Values.controlPlane.probes.startup.initialDelaySeconds }}
+            periodSeconds: {{ .Values.controlPlane.probes.startup.periodSeconds }}
+            timeoutSeconds: {{ .Values.controlPlane.probes.startup.timeoutSeconds }}
+            failureThreshold: {{ .Values.controlPlane.probes.startup.failureThreshold }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.controlPlane.probes.liveness.path }}
+              port: {{ .Values.controlPlane.probes.liveness.port }}
+            initialDelaySeconds: {{ .Values.controlPlane.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.controlPlane.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.controlPlane.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.controlPlane.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.controlPlane.probes.readiness.path }}
+              port: {{ .Values.controlPlane.probes.readiness.port }}
+            initialDelaySeconds: {{ .Values.controlPlane.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.controlPlane.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.controlPlane.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.controlPlane.probes.readiness.failureThreshold }}
+          resources:
+            {{- toYaml .Values.controlPlane.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

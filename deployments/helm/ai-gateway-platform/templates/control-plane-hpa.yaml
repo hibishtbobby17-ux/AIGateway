@@ -1,0 +1,25 @@
+{{- if .Values.controlPlane.autoscaling.enabled -}}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "ai-gateway-platform.fullname" . }}-control-plane
+  labels:
+    {{- include "ai-gateway-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: control-plane
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "ai-gateway-platform.fullname" . }}-control-plane
+  minReplicas: {{ .Values.controlPlane.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.controlPlane.autoscaling.maxReplicas }}
+  metrics:
+    {{- if .Values.controlPlane.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.controlPlane.autoscaling.targetCPUUtilizationPercentage }}
+    {{- end }}
+{{- end }}

@@ -1,0 +1,114 @@
+{{- if .Values.database.internal.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ai-gateway-platform.fullname" . }}-postgres
+  labels:
+    {{- include "ai-gateway-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "ai-gateway-platform.name" . }}-postgres
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "ai-gateway-platform.name" . }}-postgres
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: postgres
+    spec:
+      serviceAccountName: {{ include "ai-gateway-platform.fullname" . }}
+      containers:
+        - name: postgres
+          image: {{ .Values.database.internal.image }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: POSTGRES_DB
+              value: {{ .Values.database.internal.database | quote }}
+            - name: POSTGRES_USER
+              value: {{ .Values.database.internal.user | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-gateway-platform.fullname" . }}-secret
+                  key: DATABASE_PASSWORD
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: postgres
+              containerPort: 5432
+              protocol: TCP
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - exec pg_isready -U {{ .Values.database.internal.user }} -d {{ .Values.database.internal.database }}
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - exec pg_isready -U {{ .Values.database.internal.user }} -d {{ .Values.database.internal.database }}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.database.internal.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          {{- if .Values.database.internal.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "ai-gateway-platform.fullname" . }}-postgres-pvc
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ai-gateway-platform.fullname" . }}-postgres
+  labels:
+    {{- include "ai-gateway-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  type: ClusterIP
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: {{ include "ai-gateway-platform.name" . }}-postgres
+    app.kubernetes.io/instance: {{ .Release.Name }}
+{{- if .Values.database.internal.persistence.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "ai-gateway-platform.fullname" . }}-postgres-pvc
+  labels:
+    {{- include "ai-gateway-platform.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.database.internal.persistence.storageClass }}
+  storageClassName: {{ .Values.database.internal.persistence.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.database.internal.persistence.size }}
+{{- end }}
+{{- end }}

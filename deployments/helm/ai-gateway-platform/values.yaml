@@ -1,0 +1,270 @@
+# Default values for ai-gateway-platform umbrella Helm chart.
+# This chart packages the complete platform (MCP Gateway, A2A Gateway, Control Plane,
+# Embedded Web Console, and supporting workloads) for single-command installation.
+
+global:
+  environment: production
+  imageRegistry: ""
+  imagePullSecrets: []
+
+# ---------------------------------------------------------------------------
+# AI Gateway (MCP & A2A Gateway, OAuth Server, OTLP Ingestion)
+# ---------------------------------------------------------------------------
+gateway:
+  replicaCount: 2
+
+  image:
+    repository: ghcr.io/organization/ai-gateway
+    tag: v1.0.0
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 8080
+    metricsPort: 9090
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 75
+    targetMemoryUtilizationPercentage: 80
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+  topologySpreadConstraints:
+    enabled: true
+    maxSkew: 1
+    topologyKey: "topology.kubernetes.io/zone"
+    whenUnsatisfiable: "ScheduleAnyway"
+
+  probes:
+    liveness:
+      path: /healthz
+      port: 8080
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      timeoutSeconds: 3
+      failureThreshold: 3
+    readiness:
+      path: /readyz
+      port: 8080
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 2
+    startup:
+      path: /startupz
+      port: 8080
+      initialDelaySeconds: 2
+      periodSeconds: 2
+      timeoutSeconds: 3
+      failureThreshold: 30
+
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+
+  podSecurityContext:
+    fsGroup: 10001
+
+  terminationGracePeriodSeconds: 30
+
+  resilience:
+    defaultUpstreamTimeoutMs: 15000
+    defaultConcurrencyLimit: 100
+
+# ---------------------------------------------------------------------------
+# Control Plane & Embedded Management Console
+# ---------------------------------------------------------------------------
+controlPlane:
+  replicaCount: 2
+
+  image:
+    repository: ghcr.io/organization/ai-control-plane
+    tag: v1.0.0
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 8081
+
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+  topologySpreadConstraints:
+    enabled: true
+    maxSkew: 1
+    topologyKey: "topology.kubernetes.io/zone"
+    whenUnsatisfiable: "ScheduleAnyway"
+
+  probes:
+    liveness:
+      path: /healthz
+      port: 8081
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      timeoutSeconds: 3
+      failureThreshold: 3
+    readiness:
+      path: /readyz
+      port: 8081
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 2
+    startup:
+      path: /startupz
+      port: 8081
+      initialDelaySeconds: 2
+      periodSeconds: 2
+      timeoutSeconds: 3
+      failureThreshold: 30
+
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+
+  podSecurityContext:
+    fsGroup: 10001
+
+  terminationGracePeriodSeconds: 30
+
+# ---------------------------------------------------------------------------
+# Database Migrations Job (Pre-install / Pre-upgrade hook)
+# ---------------------------------------------------------------------------
+migration:
+  enabled: true
+  image:
+    repository: ghcr.io/organization/ai-migrate
+    tag: v1.0.0
+    pullPolicy: IfNotPresent
+  backoffLimit: 3
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+# ---------------------------------------------------------------------------
+# Database Configuration (Internal for standalone/dev or External for HA)
+# ---------------------------------------------------------------------------
+database:
+  # Internal PostgreSQL pod for single-command evaluation on kind/minikube
+  internal:
+    enabled: true
+    image: postgres:16-alpine
+    port: 5432
+    database: gateway_prod
+    user: gateway
+    password: "gateway_internal_secret_change_in_prod"
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+    persistence:
+      enabled: true
+      size: 10Gi
+      storageClass: ""
+
+  # External HA PostgreSQL cluster provided by operator (AWS RDS, Cloud SQL, CrunchyData, etc.)
+  external:
+    enabled: false
+    host: "postgres-ha.database.svc.cluster.local"
+    port: 5432
+    database: "gateway_prod"
+    user: "gateway_prod_user"
+    password: ""
+    sslmode: "require"
+    existingSecret: ""
+    secretPasswordKey: "postgres-password"
+
+# ---------------------------------------------------------------------------
+# Telemetry and Observability Configuration
+# ---------------------------------------------------------------------------
+telemetry:
+  otlpEndpoint: "http://jaeger-collector.telemetry.svc.cluster.local:4318"
+  clickhouse:
+    url: "http://clickhouse.telemetry.svc.cluster.local:8123/gateway_telemetry"
+  serviceMonitor:
+    enabled: false
+    interval: 15s
+
+# ---------------------------------------------------------------------------
+# Ingress and TLS Configuration
+# ---------------------------------------------------------------------------
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/proxy-body-size: "15m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+  hosts:
+    gateway:
+      host: "gateway.example.com"
+      paths:
+        - path: /
+          pathType: Prefix
+    console:
+      host: "console.example.com"
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    enabled: true
+    secretName: "ai-gateway-tls-secret"
+
+# ---------------------------------------------------------------------------
+# Security & Cryptographic Secrets
+# ---------------------------------------------------------------------------
+secrets:
+  # 32-byte (64 hex characters) key for data encryption
+  encryptionKey: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  # 32-byte (64 hex characters) key for signing key encryption
+  signingKeyEncryptionKey: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  jwtIssuer: "https://gateway.example.com"
+  jwtAudience: "gateway-api"
+  existingSecret: ""

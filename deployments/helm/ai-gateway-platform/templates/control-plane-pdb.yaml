@@ -1,0 +1,14 @@
+{{- if .Values.controlPlane.podDisruptionBudget.enabled -}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "ai-gateway-platform.fullname" . }}-control-plane
+  labels:
+    {{- include "ai-gateway-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: control-plane
+spec:
+  minAvailable: {{ .Values.controlPlane.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "ai-gateway-platform.controlPlane.selectorLabels" . | nindent 6 }}
+{{- end }}

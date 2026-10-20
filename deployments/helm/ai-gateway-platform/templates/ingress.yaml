@@ -1,0 +1,48 @@
+{{- if .Values.ingress.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "ai-gateway-platform.fullname" . }}-ingress
+  labels:
+    {{- include "ai-gateway-platform.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.hosts.gateway.host }}
+        - {{ .Values.ingress.hosts.console.host }}
+      secretName: {{ .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.hosts.gateway.host }}
+      http:
+        paths:
+          {{- range .Values.ingress.hosts.gateway.paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ include "ai-gateway-platform.fullname" $ }}-gateway
+                port:
+                  number: {{ $.Values.gateway.service.port }}
+          {{- end }}
+    - host: {{ .Values.ingress.hosts.console.host }}
+      http:
+        paths:
+          {{- range .Values.ingress.hosts.console.paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ include "ai-gateway-platform.fullname" $ }}-control-plane
+                port:
+                  number: {{ $.Values.controlPlane.service.port }}
+          {{- end }}
+{{- end }}

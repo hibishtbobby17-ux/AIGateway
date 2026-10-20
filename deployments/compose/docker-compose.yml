@@ -1,0 +1,144 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ai-gateway-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-gateway}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gateway}
+      POSTGRES_DB: ${POSTGRES_DB:-gateway_dev}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gateway} -d ${POSTGRES_DB:-gateway_dev}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3-alpine
+    container_name: ai-gateway-clickhouse
+    restart: unless-stopped
+    ports:
+      - "8123:8123" # HTTP API
+      - "9000:9000" # Native TCP client
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.55
+    container_name: ai-gateway-jaeger
+    restart: unless-stopped
+    ports:
+      - "16686:16686" # Web UI
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+
+  migrate:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile.migrate
+    container_name: ai-gateway-migrate
+    environment:
+      GATEWAY_DATABASE_URL: postgres://${POSTGRES_USER:-gateway}:${POSTGRES_PASSWORD:-gateway}@postgres:5432/${POSTGRES_DB:-gateway_dev}?sslmode=disable
+      GATEWAY_DATABASE_DRIVER: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  gateway:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile.gateway
+    container_name: ai-gateway
+    restart: unless-stopped
+    ports:
+      - "8080:8080" # Gateway MCP/A2A & OAuth traffic
+      - "9090:9090" # Prometheus metrics
+    environment:
+      GATEWAY_ENVIRONMENT: ${GATEWAY_ENVIRONMENT:-development}
+      GATEWAY_SERVER_HOST: "0.0.0.0"
+      GATEWAY_SERVER_PORT: "8080"
+      GATEWAY_DATABASE_URL: postgres://${POSTGRES_USER:-gateway}:${POSTGRES_PASSWORD:-gateway}@postgres:5432/${POSTGRES_DB:-gateway_dev}?sslmode=disable
+      GATEWAY_DATABASE_DRIVER: postgres
+      GATEWAY_ALLOW_LOCAL_EGRESS: "true"
+      GATEWAY_ENCRYPTION_KEY: ${GATEWAY_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      GATEWAY_SIGNING_KEY_ENCRYPTION_KEY: ${GATEWAY_SIGNING_KEY_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      GATEWAY_JWT_ISSUER: ${GATEWAY_JWT_ISSUER:-https://gateway.local}
+      GATEWAY_JWT_AUDIENCE: ${GATEWAY_JWT_AUDIENCE:-gateway-api}
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      clickhouse:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  control-plane:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile.control-plane
+    container_name: ai-control-plane
+    restart: unless-stopped
+    ports:
+      - "8081:8081" # Admin API & Embedded React Console
+    environment:
+      GATEWAY_ENVIRONMENT: ${GATEWAY_ENVIRONMENT:-development}
+      GATEWAY_ADMIN_HOST: "0.0.0.0"
+      GATEWAY_ADMIN_PORT: "8081"
+      GATEWAY_DATABASE_URL: postgres://${POSTGRES_USER:-gateway}:${POSTGRES_PASSWORD:-gateway}@postgres:5432/${POSTGRES_DB:-gateway_dev}?sslmode=disable
+      GATEWAY_DATABASE_DRIVER: postgres
+      GATEWAY_ALLOW_LOCAL_EGRESS: "true"
+      GATEWAY_ENCRYPTION_KEY: ${GATEWAY_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      GATEWAY_SIGNING_KEY_ENCRYPTION_KEY: ${GATEWAY_SIGNING_KEY_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      GATEWAY_JWT_ISSUER: ${GATEWAY_JWT_ISSUER:-https://gateway.local}
+      GATEWAY_JWT_AUDIENCE: ${GATEWAY_JWT_AUDIENCE:-gateway-api}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8081/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  dev-seed:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile.dev-seed
+    container_name: ai-dev-seed
+    profiles:
+      - seed
+    environment:
+      GATEWAY_DATABASE_URL: postgres://${POSTGRES_USER:-gateway}:${POSTGRES_PASSWORD:-gateway}@postgres:5432/${POSTGRES_DB:-gateway_dev}?sslmode=disable
+      GATEWAY_DATABASE_DRIVER: postgres
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+volumes:
+  postgres_data:
+  clickhouse_data:

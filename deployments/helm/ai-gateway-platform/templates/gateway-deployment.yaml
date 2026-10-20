@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ai-gateway-platform.fullname" . }}-gateway
+  labels:
+    {{- include "ai-gateway-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  {{- if not .Values.gateway.autoscaling.enabled }}
+  replicas: {{ .Values.gateway.replicaCount }}
+  {{- end }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "ai-gateway-platform.gateway.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.gateway.service.metricsPort | quote }}
+        prometheus.io/path: "/metrics"
+      labels:
+        {{- include "ai-gateway-platform.gateway.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "ai-gateway-platform.fullname" . }}
+      securityContext:
+        {{- toYaml .Values.gateway.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.gateway.terminationGracePeriodSeconds }}
+      {{- if .Values.gateway.topologySpreadConstraints.enabled }}
+      topologySpreadConstraints:
+        - maxSkew: {{ .Values.gateway.topologySpreadConstraints.maxSkew }}
+          topologyKey: {{ .Values.gateway.topologySpreadConstraints.topologyKey }}
+          whenUnsatisfiable: {{ .Values.gateway.topologySpreadConstraints.whenUnsatisfiable }}
+          labelSelector:
+            matchLabels:
+              {{- include "ai-gateway-platform.gateway.selectorLabels" . | nindent 14 }}
+      {{- end }}
+      containers:
+        - name: gateway
+          image: "{{ .Values.gateway.image.repository }}:{{ .Values.gateway.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.gateway.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.gateway.securityContext | nindent 12 }}
+          ports:
+            - name: http-gateway
+              containerPort: {{ .Values.gateway.service.port }}
+              protocol: TCP
+            - name: http-metrics
+              containerPort: {{ .Values.gateway.service.metricsPort }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "ai-gateway-platform.fullname" . }}-config
+            - secretRef:
+                name: {{ include "ai-gateway-platform.fullname" . }}-secret
+          startupProbe:
+            httpGet:
+              path: {{ .Values.gateway.probes.startup.path }}
+              port: {{ .Values.gateway.probes.startup.port }}
+            initialDelaySeconds: {{ .Values.gateway.probes.startup.initialDelaySeconds }}
+            periodSeconds: {{ .Values.gateway.probes.startup.periodSeconds }}
+            timeoutSeconds: {{ .Values.gateway.probes.startup.timeoutSeconds }}
+            failureThreshold: {{ .Values.gateway.probes.startup.failureThreshold }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.gateway.probes.liveness.path }}
+              port: {{ .Values.gateway.probes.liveness.port }}
+            initialDelaySeconds: {{ .Values.gateway.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.gateway.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.gateway.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.gateway.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.gateway.probes.readiness.path }}
+              port: {{ .Values.gateway.probes.readiness.port }}
+            initialDelaySeconds: {{ .Values.gateway.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.gateway.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.gateway.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.gateway.probes.readiness.failureThreshold }}
+          resources:
+            {{- toYaml .Values.gateway.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

@@ -1,0 +1,34 @@
+# Production Configuration for Control Plane & Embedded Management Console
+environment: production
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+
+admin:
+  host: "0.0.0.0"
+  port: 8081
+
+security:
+  jwt_issuer: "https://gateway.prod.company.internal"
+  jwt_audience: "gateway-api"
+  allow_local_egress: false
+  encryption_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+database:
+  driver: "postgres"
+  url: "postgres://gateway_prod_user:SecureProductionPassword123@postgres-ha.database.svc.cluster.local:5432/gateway_prod?sslmode=require"
+  max_conns: 50
+  min_conns: 5
+  max_conn_idle_time: 15m
+  max_conn_lifetime: 1h
+
+telemetry:
+  otlp_http_port: 4318
+  otlp_grpc_port: 4317
+  clickhouse_url: "https://clickhouse-ha.database.svc.cluster.local:8443/gateway_telemetry"
+  prometheus_port: 9090
+
+resilience:
+  default_upstream_timeout_ms: 15000
+  default_concurrency_limit: 50

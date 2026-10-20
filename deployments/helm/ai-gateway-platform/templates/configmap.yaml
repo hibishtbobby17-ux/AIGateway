@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ai-gateway-platform.fullname" . }}-config
+  labels:
+    {{- include "ai-gateway-platform.labels" . | nindent 4 }}
+data:
+  GATEWAY_ENVIRONMENT: {{ .Values.global.environment | quote }}
+  GATEWAY_SERVER_HOST: "0.0.0.0"
+  GATEWAY_SERVER_PORT: {{ .Values.gateway.service.port | quote }}
+  GATEWAY_ADMIN_HOST: "0.0.0.0"
+  GATEWAY_ADMIN_PORT: {{ .Values.controlPlane.service.port | quote }}
+  GATEWAY_ALLOW_LOCAL_EGRESS: "false"
+  GATEWAY_DATABASE_DRIVER: "postgres"
+  GATEWAY_DATABASE_HOST: {{ include "ai-gateway-platform.databaseHost" . | quote }}
+  GATEWAY_DATABASE_PORT: {{ include "ai-gateway-platform.databasePort" . | quote }}
+  GATEWAY_DATABASE_NAME: {{ include "ai-gateway-platform.databaseName" . | quote }}
+  GATEWAY_DATABASE_USER: {{ include "ai-gateway-platform.databaseUser" . | quote }}
+  GATEWAY_DATABASE_SSLMODE: {{ if .Values.database.internal.enabled }}"disable"{{ else }}{{ .Values.database.external.sslmode | quote }}{{ end }}
+  GATEWAY_JWT_ISSUER: {{ .Values.secrets.jwtIssuer | quote }}
+  GATEWAY_JWT_AUDIENCE: {{ .Values.secrets.jwtAudience | quote }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.telemetry.otlpEndpoint | quote }}
+  GATEWAY_TELEMETRY_CLICKHOUSE_URL: {{ .Values.telemetry.clickhouse.url | quote }}
+  GATEWAY_RESILIENCE_TIMEOUT_MS: {{ .Values.gateway.resilience.defaultUpstreamTimeoutMs | quote }}
+  GATEWAY_RESILIENCE_CONCURRENCY: {{ .Values.gateway.resilience.defaultConcurrencyLimit | quote }}
