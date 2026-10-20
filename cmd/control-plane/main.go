@@ -20,8 +20,10 @@ import (
 	"project_alpha/internal/config"
 	"project_alpha/internal/identity/idp"
 	"project_alpha/internal/identity/keys"
+	"project_alpha/internal/identity/oidc"
 	"project_alpha/internal/identity/tokens"
 	mcpregistry "project_alpha/internal/mcp/registry"
+	"project_alpha/internal/mcp/upstream"
 	"project_alpha/internal/observability/correlation"
 	obsmetrics "project_alpha/internal/observability/metrics"
 	obsstorage "project_alpha/internal/observability/storage"
@@ -123,6 +125,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	oidcRepo, err := oidc.NewSQLProviderRepository(db)
+	if err != nil {
+		logger.Error("oidc provider repository initialization failed", "error", err)
+		os.Exit(1)
+	}
+	oidcDiscoverer := oidc.NewDiscoverer(true, 5*time.Second)
+
 	// Ensure default admin user and tenant exist for immediate login
 	bootstrapCtx, cancelBootstrap := context.WithTimeout(context.Background(), 5*time.Second)
 	defaultTenantID := "tenant-1"
@@ -152,19 +161,22 @@ func main() {
 	cancelBootstrap()
 
 	adminHandler := admin.NewHandlerWithConfig(admin.Config{
-		Recorder:     auditRecorder,
-		PolicyRepo:   policyRepo,
-		TenantsRepo:  tenantsRepo,
-		MCPRegistry:  mcpReg,
-		A2ARegistry:  a2aReg,
-		TasksStore:   tasksStore,
-		TraceStore:   traceStore,
-		LogStore:     logStore,
-		PolicyEngine: policyEngine,
-		UserRepo:     userRepo,
-		KeyManager:   keyManager,
-		JWTIssuer:    cfg.Security.JWTIssuer,
-		JWTAudience:  cfg.Security.JWTAudience,
+		Recorder:       auditRecorder,
+		PolicyRepo:     policyRepo,
+		TenantsRepo:    tenantsRepo,
+		MCPRegistry:    mcpReg,
+		A2ARegistry:    a2aReg,
+		TasksStore:     tasksStore,
+		TraceStore:     traceStore,
+		LogStore:       logStore,
+		PolicyEngine:   policyEngine,
+		UserRepo:       userRepo,
+		KeyManager:     keyManager,
+		JWTIssuer:      cfg.Security.JWTIssuer,
+		JWTAudience:    cfg.Security.JWTAudience,
+		OIDCRepo:       oidcRepo,
+		OIDCDiscoverer: oidcDiscoverer,
+		OAuthProvider:  upstream.NewOAuthTokenProvider(5*time.Second, true),
 	})
 
 	// 6. Admin API router
@@ -185,6 +197,8 @@ func main() {
 	// Public authentication endpoints for Console login
 	mux.HandleFunc("/api/v1/auth/login", adminHandler.HandleLogin)
 	mux.HandleFunc("/api/v1/auth/logout", adminHandler.HandleLogout)
+	mux.HandleFunc("/api/v1/auth/sso/providers", adminHandler.HandlePublicSSOProviders)
+	mux.HandleFunc("/api/v1/auth/sso/simulate", adminHandler.HandleSimulateSSOLogin)
 
 	// Authenticated & role-guarded administrative endpoints
 	adminMux := http.NewServeMux()

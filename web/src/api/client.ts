@@ -15,6 +15,8 @@ import {
   Project,
   UserProfile,
   LoginResponse,
+  SSOProvider,
+  SSODiscoveryResult,
 } from '../types';
 
 export class ApiClient {
@@ -105,6 +107,58 @@ export class ApiClient {
     return this.request<UserProfile>('/api/v1/auth/me');
   }
 
+  // Single Sign-On (SSO) & IdP Federation
+  listSSOProviders(): Promise<SSOProvider[]> {
+    return this.request<SSOProvider[]>('/api/v1/sso/providers');
+  }
+
+  saveSSOProvider(provider: Partial<SSOProvider>): Promise<SSOProvider> {
+    return this.request<SSOProvider>('/api/v1/sso/providers', {
+      method: 'POST',
+      body: JSON.stringify(provider),
+    });
+  }
+
+  deleteSSOProvider(id: string): Promise<{ status: string }> {
+    return this.request<{ status: string }>(`/api/v1/sso/providers/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  testSSODiscovery(issuerUrl: string): Promise<SSODiscoveryResult> {
+    return this.request<SSODiscoveryResult>('/api/v1/sso/test', {
+      method: 'POST',
+      body: JSON.stringify({ issuer_url: issuerUrl }),
+    });
+  }
+
+  listPublicSSOProviders(tenantId?: string): Promise<Array<{ id: string; name: string; issuer_url: string }>> {
+    const q = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+    return this.request<Array<{ id: string; name: string; issuer_url: string }>>(`/api/v1/auth/sso/providers${q}`);
+  }
+
+  async simulateSSOLogin(providerId: string, email: string, tenantId?: string, groups?: string[]): Promise<LoginResponse> {
+    const res = await this.request<LoginResponse>('/api/v1/auth/sso/simulate', {
+      method: 'POST',
+      body: JSON.stringify({
+        provider_id: providerId,
+        email,
+        tenant_id: tenantId,
+        groups: groups || ['platform-admins'],
+      }),
+    });
+    if (res.token) {
+      this.setToken(res.token);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('gateway_token', res.token);
+      }
+    }
+    if (res.user && typeof window !== 'undefined') {
+      localStorage.setItem('gateway_user', JSON.stringify(res.user));
+    }
+    return res;
+  }
+
   // Topology
   getConfiguredTopology(): Promise<ConfiguredTopology> {
     return this.request<ConfiguredTopology>('/api/v1/topology/configured');
@@ -142,6 +196,13 @@ export class ApiClient {
   testMCPHealth(id: string): Promise<{ health: string; message: string; latency_ms: number; http_status: number }> {
     return this.request(`/api/v1/mcp-servers/${encodeURIComponent(id)}/health`, {
       method: 'POST',
+    });
+  }
+
+  testMCPOAuth(config: { token_endpoint: string; client_id: string; client_secret: string; scopes?: string; audience?: string }): Promise<{ status: string; token_type?: string; expires_in?: number; token_sample?: string; latency_ms: number; message?: string }> {
+    return this.request('/api/v1/mcp-servers/test-oauth', {
+      method: 'POST',
+      body: JSON.stringify(config),
     });
   }
 

@@ -9,6 +9,7 @@ import { TraceWaterfall } from './components/TraceWaterfall';
 import { LogSearch } from './components/LogSearch';
 import { TasksView } from './components/TasksView';
 import { PoliciesView } from './components/PoliciesView';
+import { SSOConfigView } from './components/SSOConfigView';
 import { AuditView } from './components/AuditView';
 import { api } from './api/client';
 import { UserProfile } from './types';
@@ -177,6 +178,7 @@ export const App: React.FC = () => {
         )}
         {activeTab === 'tasks' && <TasksView onSelectTrace={handleDeepLinkTrace} />}
         {activeTab === 'policies' && <PoliciesView />}
+        {activeTab === 'sso' && <SSOConfigView />}
         {activeTab === 'audit' && <AuditView />}
       </main>
     </div>

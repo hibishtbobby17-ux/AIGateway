@@ -24,11 +24,12 @@ var (
 )
 
 const (
-	TypeNone                   = "NONE"
-	TypeStaticBearer           = "STATIC_BEARER"
-	TypeBasic                  = "BASIC"
-	TypeAPIKey                 = "API_KEY"
-	TypeDelegatedTokenExchange = "DELEGATED_TOKEN_EXCHANGE"
+	TypeNone                    = "NONE"
+	TypeStaticBearer            = "STATIC_BEARER"
+	TypeBasic                   = "BASIC"
+	TypeAPIKey                  = "API_KEY"
+	TypeDelegatedTokenExchange  = "DELEGATED_TOKEN_EXCHANGE"
+	TypeOAuth2ClientCredentials = "OAUTH2_CLIENT_CREDENTIALS"
 )
 
 // Credential represents an outbound credential to attach to an upstream request.
@@ -120,6 +121,11 @@ type UpstreamAuthConfig struct {
 	APIKeyHeader    string   `json:"api_key_header,omitempty"`
 	Audience        string   `json:"audience,omitempty"`
 	RequestedScopes []string `json:"requested_scopes,omitempty"`
+	// OAuth2 Client Credentials fields
+	TokenEndpoint   string   `json:"token_endpoint,omitempty"`
+	ClientID        string   `json:"client_id,omitempty"`
+	ClientSecret    string   `json:"client_secret,omitempty"`
+	Scopes          string   `json:"scopes,omitempty"`
 }
 
 // TokenExchanger creates short-lived, downstream-scoped tokens for upstream servers (RFC 8693).
@@ -199,14 +205,25 @@ type CredentialProvider interface {
 	Resolve(ctx context.Context, serverID string, cfg UpstreamAuthConfig) (Credential, error)
 }
 
+// OAuthTokenFetcher obtains automated M2M access tokens for upstream servers.
+type OAuthTokenFetcher interface {
+	GetToken(ctx context.Context, serverID string, cfg UpstreamAuthConfig) (string, error)
+}
+
 // Provider implements CredentialProvider with anti-relay validation.
 type Provider struct {
-	exchanger *TokenExchanger
+	exchanger    *TokenExchanger
+	oauthFetcher OAuthTokenFetcher
 }
 
 // NewProvider creates a new delegation credential provider.
 func NewProvider(exchanger *TokenExchanger) *Provider {
 	return &Provider{exchanger: exchanger}
+}
+
+// SetOAuthTokenFetcher configures an upstream OAuth2 token fetcher.
+func (p *Provider) SetOAuthTokenFetcher(fetcher OAuthTokenFetcher) {
+	p.oauthFetcher = fetcher
 }
 
 // Resolve resolves the appropriate outbound credential for the given upstream configuration.
@@ -249,6 +266,16 @@ func (p *Provider) Resolve(ctx context.Context, serverID string, cfg UpstreamAut
 			return nil, fmt.Errorf("token exchange failed: %w", err)
 		}
 		return BearerCredential{Token: token, IsDelegated: true}, nil
+
+	case TypeOAuth2ClientCredentials:
+		if p.oauthFetcher == nil {
+			return nil, errors.New("oauth token fetcher is not configured on credential provider")
+		}
+		token, err := p.oauthFetcher.GetToken(ctx, serverID, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("oauth2 token acquisition failed: %w", err)
+		}
+		return BearerCredential{Token: token, IsDelegated: false}, nil
 
 	default:
 		return nil, fmt.Errorf("%w: unknown auth type %q", ErrInvalidAuthConfig, cfg.Type)

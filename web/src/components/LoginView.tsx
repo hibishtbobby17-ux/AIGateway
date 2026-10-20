@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../api/client';
 import { UserProfile } from '../types';
 
@@ -14,6 +14,13 @@ export const LoginView: React.FC<LoginViewProps> = ({ api, onLoginSuccess }) => 
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [publicProviders, setPublicProviders] = useState<Array<{ id: string; name: string; issuer_url: string }>>([]);
+
+  useEffect(() => {
+    api.listPublicSSOProviders(tenantId)
+      .then(setPublicProviders)
+      .catch(() => {});
+  }, [tenantId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,6 +32,19 @@ export const LoginView: React.FC<LoginViewProps> = ({ api, onLoginSuccess }) => 
       onLoginSuccess(res.token, res.user);
     } catch (err: any) {
       setError(err.message || 'Authentication failed. Please verify credentials.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSSOClick = async (providerId: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.simulateSSOLogin(providerId, 'sso-user@enterprise.local', tenantId);
+      onLoginSuccess(res.token, res.user);
+    } catch (err: any) {
+      setError(err.message || 'SSO authentication failed');
     } finally {
       setLoading(false);
     }
@@ -217,6 +237,43 @@ export const LoginView: React.FC<LoginViewProps> = ({ api, onLoginSuccess }) => 
           </button>
         </form>
 
+        {/* Dynamic External Identity Providers (SSO) */}
+        {publicProviders.length > 0 && (
+          <div style={{ marginTop: '1.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', margin: '1rem 0', gap: '0.75rem' }}>
+              <div style={{ flex: 1, height: '1px', background: 'var(--border-subtle)' }} />
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Or Single Sign-On (SSO)
+              </span>
+              <div style={{ flex: 1, height: '1px', background: 'var(--border-subtle)' }} />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {publicProviders.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => handleSSOClick(p.id)}
+                  disabled={loading}
+                  className="btn btn-secondary"
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.5rem',
+                    fontSize: '0.875rem',
+                    padding: '0.6rem',
+                  }}
+                >
+                  <span>🔑</span>
+                  <span>Sign in with {p.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div style={{
           marginTop: '2rem',
           textAlign: 'center',
@@ -231,3 +288,5 @@ export const LoginView: React.FC<LoginViewProps> = ({ api, onLoginSuccess }) => 
     </div>
   );
 };
+
+export default LoginView;

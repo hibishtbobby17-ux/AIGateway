@@ -10,8 +10,10 @@ import (
 	"project_alpha/internal/audit"
 	"project_alpha/internal/identity/idp"
 	"project_alpha/internal/identity/keys"
+	"project_alpha/internal/identity/oidc"
 	"project_alpha/internal/identity/principal"
 	mcpregistry "project_alpha/internal/mcp/registry"
+	"project_alpha/internal/mcp/upstream"
 	obsstorage "project_alpha/internal/observability/storage"
 	"project_alpha/internal/policy"
 	"project_alpha/internal/storage"
@@ -19,38 +21,44 @@ import (
 
 // Config holds all subsystem dependencies for the administrative control plane.
 type Config struct {
-	Recorder     audit.Recorder
-	PolicyRepo   *policy.SQLRepository
-	TenantsRepo  *storage.SQLTenantRepository
-	MCPRegistry  mcpregistry.Registry
-	A2ARegistry  a2aregistry.Registry
-	TasksStore   tasks.Store
-	TraceStore   obsstorage.TraceStore
-	LogStore     obsstorage.LogStore
-	PolicyEngine *policy.Engine
-	HTTPClient   *http.Client
-	UserRepo     idp.UserRepository
-	KeyManager   *keys.Manager
-	JWTIssuer    string
-	JWTAudience  string
+	Recorder       audit.Recorder
+	PolicyRepo     *policy.SQLRepository
+	TenantsRepo    *storage.SQLTenantRepository
+	MCPRegistry    mcpregistry.Registry
+	A2ARegistry    a2aregistry.Registry
+	TasksStore     tasks.Store
+	TraceStore     obsstorage.TraceStore
+	LogStore       obsstorage.LogStore
+	PolicyEngine   *policy.Engine
+	HTTPClient     *http.Client
+	UserRepo       idp.UserRepository
+	KeyManager     *keys.Manager
+	JWTIssuer      string
+	JWTAudience    string
+	OIDCRepo       *oidc.SQLProviderRepository
+	OIDCDiscoverer *oidc.Discoverer
+	OAuthProvider  *upstream.OAuthTokenProvider
 }
 
 // Handler serves administrative Control Plane REST APIs.
 type Handler struct {
-	recorder     audit.Recorder
-	policyRepo   *policy.SQLRepository
-	tenantsRepo  *storage.SQLTenantRepository
-	mcpRegistry  mcpregistry.Registry
-	a2aRegistry  a2aregistry.Registry
-	tasksStore   tasks.Store
-	traceStore   obsstorage.TraceStore
-	logStore     obsstorage.LogStore
-	policyEngine *policy.Engine
-	httpClient   *http.Client
-	userRepo     idp.UserRepository
-	keyManager   *keys.Manager
-	jwtIssuer    string
-	jwtAudience  string
+	recorder       audit.Recorder
+	policyRepo     *policy.SQLRepository
+	tenantsRepo    *storage.SQLTenantRepository
+	mcpRegistry    mcpregistry.Registry
+	a2aRegistry    a2aregistry.Registry
+	tasksStore     tasks.Store
+	traceStore     obsstorage.TraceStore
+	logStore       obsstorage.LogStore
+	policyEngine   *policy.Engine
+	httpClient     *http.Client
+	userRepo       idp.UserRepository
+	keyManager     *keys.Manager
+	jwtIssuer      string
+	jwtAudience    string
+	oidcRepo       *oidc.SQLProviderRepository
+	oidcDiscoverer *oidc.Discoverer
+	oauthProvider  *upstream.OAuthTokenProvider
 }
 
 // NewHandler creates a new administrative API handler with core repositories.
@@ -68,21 +76,32 @@ func NewHandlerWithConfig(cfg Config) *Handler {
 	if client == nil {
 		client = &http.Client{Timeout: 5 * time.Second}
 	}
+	discoverer := cfg.OIDCDiscoverer
+	if discoverer == nil {
+		discoverer = oidc.NewDiscoverer(true, 5*time.Second)
+	}
+	oauthProvider := cfg.OAuthProvider
+	if oauthProvider == nil {
+		oauthProvider = upstream.NewOAuthTokenProvider(5*time.Second, true)
+	}
 	return &Handler{
-		recorder:     cfg.Recorder,
-		policyRepo:   cfg.PolicyRepo,
-		tenantsRepo:  cfg.TenantsRepo,
-		mcpRegistry:  cfg.MCPRegistry,
-		a2aRegistry:  cfg.A2ARegistry,
-		tasksStore:   cfg.TasksStore,
-		traceStore:   cfg.TraceStore,
-		logStore:     cfg.LogStore,
-		policyEngine: cfg.PolicyEngine,
-		httpClient:   client,
-		userRepo:     cfg.UserRepo,
-		keyManager:   cfg.KeyManager,
-		jwtIssuer:    cfg.JWTIssuer,
-		jwtAudience:  cfg.JWTAudience,
+		recorder:       cfg.Recorder,
+		policyRepo:     cfg.PolicyRepo,
+		tenantsRepo:    cfg.TenantsRepo,
+		mcpRegistry:    cfg.MCPRegistry,
+		a2aRegistry:    cfg.A2ARegistry,
+		tasksStore:     cfg.TasksStore,
+		traceStore:     cfg.TraceStore,
+		logStore:       cfg.LogStore,
+		policyEngine:   cfg.PolicyEngine,
+		httpClient:     client,
+		userRepo:       cfg.UserRepo,
+		keyManager:     cfg.KeyManager,
+		jwtIssuer:      cfg.JWTIssuer,
+		jwtAudience:    cfg.JWTAudience,
+		oidcRepo:       cfg.OIDCRepo,
+		oidcDiscoverer: discoverer,
+		oauthProvider:  oauthProvider,
 	}
 }
 
@@ -90,6 +109,9 @@ func NewHandlerWithConfig(cfg Config) *Handler {
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/audit", h.HandleGetAudit)
 	mux.HandleFunc("/api/v1/auth/me", h.HandleMe)
+	mux.HandleFunc("/api/v1/sso/providers", h.HandleSSOProviders)
+	mux.HandleFunc("/api/v1/sso/providers/", h.HandleSSOProviders)
+	mux.HandleFunc("/api/v1/sso/test", h.HandleTestSSODiscovery)
 	mux.HandleFunc("/api/v1/tenants", h.HandleGetTenant)
 	mux.HandleFunc("/api/v1/projects", h.HandleProjects)
 	mux.HandleFunc("/api/v1/mcp-servers", h.HandleMCPServers)

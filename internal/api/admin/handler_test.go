@@ -464,3 +464,81 @@ func TestAdminHandler_TenantIsolation(t *testing.T) {
 		t.Fatalf("tenant isolation breach: tenant-2 saw tenant-1 traces: %+v", summaries)
 	}
 }
+
+func TestAdminHandler_MCPOAuth2RegistrationAndHealth(t *testing.T) {
+	handler, _, _, _, _, _, _ := setupTestAdmin(t)
+
+	caller := principal.Principal{
+		Subject:  "operator-1",
+		TenantID: "tenant-1",
+		Roles:    []string{"tenant-admin"},
+	}
+
+	// Spin up mock OAuth2 token provider server
+	mockTokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token": "mock-m2m-token-123",
+			"token_type":   "Bearer",
+			"expires_in":   3600,
+		})
+	}))
+	defer mockTokenServer.Close()
+
+	// 1. Test test-oauth endpoint
+	probeBody := fmt.Sprintf(`{
+		"token_endpoint": "%s",
+		"client_id": "test-client",
+		"client_secret": "test-secret",
+		"scopes": "read write"
+	}`, mockTokenServer.URL)
+	reqProbe := httptest.NewRequest(http.MethodPost, "/api/v1/mcp-servers/test-oauth", bytes.NewBufferString(probeBody))
+	reqProbe = reqProbe.WithContext(principal.WithContext(reqProbe.Context(), caller))
+	rrProbe := httptest.NewRecorder()
+	handler.HandleMCPServers(rrProbe, reqProbe)
+
+	if rrProbe.Code != http.StatusOK {
+		t.Fatalf("expected 200 for test-oauth, got %d: %s", rrProbe.Code, rrProbe.Body.String())
+	}
+
+	// 2. Register MCP server with OAuth2 client credentials
+	createBody := fmt.Sprintf(`{
+		"name": "oauth-jira-tools",
+		"namespace_prefix": "jira",
+		"transport_type": "SSE",
+		"endpoint_url": "%s/sse",
+		"auth_config": {
+			"type": "OAUTH2_CLIENT_CREDENTIALS",
+			"token_endpoint": "%s",
+			"client_id": "jira-m2m-client",
+			"client_secret": "jira-m2m-secret",
+			"scopes": "tools:call"
+		}
+	}`, mockTokenServer.URL, mockTokenServer.URL)
+
+	reqCreate := httptest.NewRequest(http.MethodPost, "/api/v1/mcp-servers", bytes.NewBufferString(createBody))
+	reqCreate = reqCreate.WithContext(principal.WithContext(reqCreate.Context(), caller))
+	rrCreate := httptest.NewRecorder()
+	handler.HandleMCPServers(rrCreate, reqCreate)
+
+	if rrCreate.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created for oauth mcp server, got %d: %s", rrCreate.Code, rrCreate.Body.String())
+	}
+
+	var created mcpregistry.ServerRegistration
+	_ = json.Unmarshal(rrCreate.Body.Bytes(), &created)
+	if created.AuthConfig.ClientSecret != "••••••••" {
+		t.Fatalf("expected client_secret to be sanitized/masked in response, got: %s", created.AuthConfig.ClientSecret)
+	}
+
+	// 3. Probe Health: Should resolve OAuth token and hit mock endpoint
+	reqHealth := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/mcp-servers/%s/health", created.ID), nil)
+	reqHealth = reqHealth.WithContext(principal.WithContext(reqHealth.Context(), caller))
+	rrHealth := httptest.NewRecorder()
+	handler.HandleMCPServers(rrHealth, reqHealth)
+
+	if rrHealth.Code != http.StatusOK {
+		t.Fatalf("expected 200 for health probe, got %d: %s", rrHealth.Code, rrHealth.Body.String())
+	}
+}
+

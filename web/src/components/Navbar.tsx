@@ -30,6 +30,7 @@ export const Navbar: React.FC<Props> = ({ activeTab, onTabChange, tenantId, onTe
     { id: 'logs', label: 'Correlated Logs', icon: '📜' },
     { id: 'tasks', label: 'Tasks & Calls', icon: '📋' },
     { id: 'policies', label: 'Policies & RBAC', icon: '🛡️' },
+    { id: 'sso', label: 'SSO & Identity', icon: '🔑' },
     { id: 'audit', label: 'Security Audit', icon: '🔒' },
   ];
 

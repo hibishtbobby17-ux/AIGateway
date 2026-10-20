@@ -44,6 +44,20 @@ export interface ObservedTopology {
   total_errors: number;
 }
 
+export interface MCPServerAuthConfig {
+  type: 'NONE' | 'STATIC_BEARER' | 'BASIC' | 'API_KEY' | 'OAUTH2_CLIENT_CREDENTIALS';
+  static_token?: string;
+  username?: string;
+  password?: string;
+  api_key?: string;
+  api_key_header?: string;
+  token_endpoint?: string;
+  client_id?: string;
+  client_secret?: string;
+  scopes?: string;
+  audience?: string;
+}
+
 export interface MCPServer {
   id: string;
   tenant_id: string;
@@ -53,6 +67,7 @@ export interface MCPServer {
   endpoint_url?: string;
   command?: string;
   auth_header?: string;
+  auth_config?: MCPServerAuthConfig;
   timeout_ms: number;
   concurrency_limit: number;
   health_status: NodeStatus;
@@ -236,3 +251,29 @@ export interface LoginResponse {
   token: string;
   user: UserProfile;
 }
+
+export interface SSOProvider {
+  id: string;
+  tenant_id: string;
+  name: string;
+  issuer_url: string;
+  client_id: string;
+  client_secret?: string;
+  claim_mapping: Record<string, string>;
+  active: boolean;
+}
+
+export interface SSODiscoveryResult {
+  status: 'ok' | 'error';
+  message?: string;
+  latency_ms?: number;
+  configuration?: {
+    issuer: string;
+    authorization_endpoint: string;
+    token_endpoint: string;
+    jwks_uri: string;
+    userinfo_endpoint?: string;
+    scopes_supported?: string[];
+  };
+}
+

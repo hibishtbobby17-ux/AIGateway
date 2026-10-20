@@ -11,13 +11,16 @@ import (
 	"github.com/google/uuid"
 	"project_alpha/internal/api/middleware"
 	"project_alpha/internal/audit"
+	"project_alpha/internal/identity/delegation"
 	"project_alpha/internal/identity/principal"
 	mcpregistry "project_alpha/internal/mcp/registry"
+	"project_alpha/internal/mcp/upstream"
 )
 
 // HandleMCPServers routes MCP server management endpoints:
 //   GET    /api/v1/mcp-servers
 //   POST   /api/v1/mcp-servers
+//   POST   /api/v1/mcp-servers/test-oauth
 //   GET    /api/v1/mcp-servers/{id}
 //   PUT    /api/v1/mcp-servers/{id}
 //   DELETE /api/v1/mcp-servers/{id}
@@ -46,6 +49,15 @@ func (h *Handler) HandleMCPServers(w http.ResponseWriter, r *http.Request) {
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
+		return
+	}
+
+	if path == "test-oauth" {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		h.testMCPOAuth(w, r, p)
 		return
 	}
 
@@ -78,16 +90,37 @@ func (h *Handler) HandleMCPServers(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
+func sanitizeServer(s *mcpregistry.ServerRegistration) *mcpregistry.ServerRegistration {
+	if s == nil {
+		return nil
+	}
+	clone := *s
+	if clone.AuthConfig.ClientSecret != "" {
+		clone.AuthConfig.ClientSecret = "••••••••"
+	}
+	if clone.AuthConfig.Password != "" {
+		clone.AuthConfig.Password = "••••••••"
+	}
+	if clone.AuthConfig.StaticToken != "" && len(clone.AuthConfig.StaticToken) > 8 {
+		clone.AuthConfig.StaticToken = clone.AuthConfig.StaticToken[:4] + "••••"
+	}
+	return &clone
+}
+
 func (h *Handler) listMCPServers(w http.ResponseWriter, r *http.Request, p principal.Principal) {
 	servers, err := h.mcpRegistry.ListServers(r.Context(), p.TenantID)
 	if err != nil {
 		middleware.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	if servers == nil {
-		servers = []*mcpregistry.ServerRegistration{}
+	var sanitized []*mcpregistry.ServerRegistration
+	for _, s := range servers {
+		sanitized = append(sanitized, sanitizeServer(s))
 	}
-	middleware.WriteJSON(w, http.StatusOK, servers)
+	if sanitized == nil {
+		sanitized = []*mcpregistry.ServerRegistration{}
+	}
+	middleware.WriteJSON(w, http.StatusOK, sanitized)
 }
 
 func (h *Handler) createMCPServer(w http.ResponseWriter, r *http.Request, p principal.Principal) {
@@ -100,6 +133,14 @@ func (h *Handler) createMCPServer(w http.ResponseWriter, r *http.Request, p prin
 	if strings.TrimSpace(s.Name) == "" {
 		middleware.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
 		return
+	}
+
+	// Validate OAuth2 configuration if chosen
+	if s.AuthConfig.Type == delegation.TypeOAuth2ClientCredentials {
+		if strings.TrimSpace(s.AuthConfig.TokenEndpoint) == "" || strings.TrimSpace(s.AuthConfig.ClientID) == "" {
+			middleware.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "token_endpoint and client_id are required for OAUTH2_CLIENT_CREDENTIALS"})
+			return
+		}
 	}
 
 	s.TenantID = p.TenantID
@@ -140,11 +181,12 @@ func (h *Handler) createMCPServer(w http.ResponseWriter, r *http.Request, p prin
 				"server_name":    s.Name,
 				"transport_type": s.TransportType,
 				"endpoint_url":   s.EndpointURL,
+				"auth_type":      s.AuthConfig.Type,
 			},
 		})
 	}
 
-	middleware.WriteJSON(w, http.StatusCreated, s)
+	middleware.WriteJSON(w, http.StatusCreated, sanitizeServer(&s))
 }
 
 func (h *Handler) getMCPServer(w http.ResponseWriter, r *http.Request, p principal.Principal, serverID string) {
@@ -153,7 +195,7 @@ func (h *Handler) getMCPServer(w http.ResponseWriter, r *http.Request, p princip
 		middleware.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "mcp server not found"})
 		return
 	}
-	middleware.WriteJSON(w, http.StatusOK, s)
+	middleware.WriteJSON(w, http.StatusOK, sanitizeServer(s))
 }
 
 func (h *Handler) updateMCPServer(w http.ResponseWriter, r *http.Request, p principal.Principal, serverID string) {
@@ -161,6 +203,20 @@ func (h *Handler) updateMCPServer(w http.ResponseWriter, r *http.Request, p prin
 	if err := json.NewDecoder(r.Body).Decode(&s); err != nil {
 		middleware.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json payload"})
 		return
+	}
+
+	// Fetch existing to preserve client_secret if masked
+	existing, _ := h.mcpRegistry.GetServer(r.Context(), p.TenantID, serverID)
+	if existing != nil {
+		if s.AuthConfig.ClientSecret == "••••••••" || s.AuthConfig.ClientSecret == "" {
+			s.AuthConfig.ClientSecret = existing.AuthConfig.ClientSecret
+		}
+		if s.AuthConfig.Password == "••••••••" || s.AuthConfig.Password == "" {
+			s.AuthConfig.Password = existing.AuthConfig.Password
+		}
+		if strings.HasSuffix(s.AuthConfig.StaticToken, "••••") || s.AuthConfig.StaticToken == "" {
+			s.AuthConfig.StaticToken = existing.AuthConfig.StaticToken
+		}
 	}
 
 	s.ID = serverID
@@ -173,10 +229,10 @@ func (h *Handler) updateMCPServer(w http.ResponseWriter, r *http.Request, p prin
 
 	updated, err := h.mcpRegistry.GetServer(r.Context(), p.TenantID, serverID)
 	if err != nil {
-		middleware.WriteJSON(w, http.StatusOK, s)
+		middleware.WriteJSON(w, http.StatusOK, sanitizeServer(&s))
 		return
 	}
-	middleware.WriteJSON(w, http.StatusOK, updated)
+	middleware.WriteJSON(w, http.StatusOK, sanitizeServer(updated))
 }
 
 func (h *Handler) deleteMCPServer(w http.ResponseWriter, r *http.Request, p principal.Principal, serverID string) {
@@ -202,6 +258,38 @@ func (h *Handler) deleteMCPServer(w http.ResponseWriter, r *http.Request, p prin
 	middleware.WriteJSON(w, http.StatusOK, map[string]string{"status": "deleted", "id": serverID})
 }
 
+func (h *Handler) testMCPOAuth(w http.ResponseWriter, r *http.Request, p principal.Principal) {
+	var req struct {
+		TokenEndpoint string `json:"token_endpoint"`
+		ClientID      string `json:"client_id"`
+		ClientSecret  string `json:"client_secret"`
+		Scopes        string `json:"scopes"`
+		Audience      string `json:"audience"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		middleware.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json payload"})
+		return
+	}
+
+	if req.TokenEndpoint == "" || req.ClientID == "" || req.ClientSecret == "" {
+		middleware.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "token_endpoint, client_id, and client_secret are required"})
+		return
+	}
+
+	oauthProvider := h.oauthProvider
+	if oauthProvider == nil {
+		oauthProvider = upstream.NewOAuthTokenProvider(5*time.Second, true)
+	}
+
+	res, err := oauthProvider.FetchTokenDirect(r.Context(), req.TokenEndpoint, req.ClientID, req.ClientSecret, req.Scopes, req.Audience)
+	if err != nil {
+		middleware.WriteJSON(w, http.StatusBadRequest, res)
+		return
+	}
+
+	middleware.WriteJSON(w, http.StatusOK, res)
+}
+
 func (h *Handler) testMCPHealth(w http.ResponseWriter, r *http.Request, p principal.Principal, serverID string) {
 	s, err := h.mcpRegistry.GetServer(r.Context(), p.TenantID, serverID)
 	if err != nil {
@@ -223,9 +311,22 @@ func (h *Handler) testMCPHealth(w http.ResponseWriter, r *http.Request, p princi
 			healthStatus = "UNHEALTHY"
 			message = fmt.Sprintf("invalid endpoint url: %v", reqErr)
 		} else {
-			if s.AuthHeader != "" {
+			// Resolve OAuth2 or Bearer credentials for probe
+			if s.AuthConfig.Type == delegation.TypeOAuth2ClientCredentials {
+				oauthProvider := h.oauthProvider
+				if oauthProvider == nil {
+					oauthProvider = upstream.NewOAuthTokenProvider(3*time.Second, true)
+				}
+				tok, tokErr := oauthProvider.GetToken(probeCtx, s.ID, s.AuthConfig)
+				if tokErr == nil && tok != "" {
+					req.Header.Set("Authorization", "Bearer "+tok)
+				}
+			} else if s.AuthHeader != "" {
 				req.Header.Set("Authorization", s.AuthHeader)
+			} else if s.AuthConfig.StaticToken != "" {
+				req.Header.Set("Authorization", "Bearer "+s.AuthConfig.StaticToken)
 			}
+
 			resp, doErr := h.httpClient.Do(req)
 			if doErr != nil {
 				healthStatus = "UNHEALTHY"

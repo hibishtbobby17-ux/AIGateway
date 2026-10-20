@@ -264,24 +264,33 @@ sequenceDiagram
   - Verified live end-to-end authentication via automated test script.
 
 ### Phase 2: Portal SSO / IdP Configuration
-- [ ] **2.1 Admin SSO Endpoints:**
-  - Implement `internal/api/admin/sso_handler.go` utilizing [SQLProviderRepository](file:///c:/Users/Administrator/Downloads/project/project_alpha/internal/identity/oidc/sql_repository.go).
-  - Add connection test utility validating remote `.well-known/openid-configuration`.
-- [ ] **2.2 Frontend SSO Settings:**
-  - Create `web/src/components/SSOConfigView.tsx`.
-  - Add "SSO & Identity" navigation link in [Navbar.tsx](file:///c:/Users/Administrator/Downloads/project/project_alpha/web/src/components/Navbar.tsx).
-  - Connect provider creation, listing, editing, and live connection testing to API.
-- [ ] **2.3 Console SSO Login Integration:**
-  - Add "Sign in with SSO" button to `LoginView.tsx` redirecting to the configured IdP.
+- [x] **2.1 Admin SSO Endpoints:**
+  - Implemented `internal/api/admin/sso.go` utilizing [SQLProviderRepository](file:///c:/Users/Administrator/Downloads/project/project_alpha/internal/identity/oidc/sql_repository.go).
+  - Added connection test utility validating remote `.well-known/openid-configuration` via [Discoverer](file:///c:/Users/Administrator/Downloads/project/project_alpha/internal/identity/oidc/discovery.go).
+  - Added unit tests in `internal/api/admin/sso_test.go` (100% pass).
+- [x] **2.2 Frontend SSO Settings:**
+  - Created `web/src/components/SSOConfigView.tsx` with quick-start templates (Okta, Microsoft Entra ID, Auth0, Google Workspace, Keycloak), claim mapping editor, discovery testing, and login simulation.
+  - Added "SSO & Identity" navigation link in [Navbar.tsx](file:///c:/Users/Administrator/Downloads/project/project_alpha/web/src/components/Navbar.tsx) and mounted in [App.tsx](file:///c:/Users/Administrator/Downloads/project/project_alpha/web/src/App.tsx).
+  - Connected provider creation, listing, editing, deletion, and live connection testing to the API.
+- [x] **2.3 Console SSO Login Integration:**
+  - Updated [LoginView.tsx](file:///c:/Users/Administrator/Downloads/project/project_alpha/web/src/components/LoginView.tsx) to query active public SSO providers and render federated SSO sign-in options.
+  - Implemented `/api/v1/auth/sso/simulate` for instant end-to-end token exchange and role mapping validation.
 
 ### Phase 3: Upstream MCP Server OAuth 2.0 Support
-- [ ] **3.1 Frontend MCP Registration Modal:**
-  - Expand [MCPServersView.tsx](file:///c:/Users/Administrator/Downloads/project/project_alpha/web/src/components/MCPServersView.tsx) to include Authentication Method selection and OAuth2 credential fields.
-- [ ] **3.2 Backend MCP Credential Encryption:**
-  - Update `internal/api/admin/mcp_handler.go` to validate and encrypt OAuth credentials before writing to `mcp_servers`.
-- [ ] **3.3 Gateway Egress OAuth Token Provider:**
-  - Implement `internal/mcp/upstream/oauth_token_provider.go` with automated token acquisition, caching, and auto-refresh.
-  - Integrate with the gateway's SSRF-safe outbound HTTP dialer.
+- [x] **3.1 Frontend MCP Registration & Probe UI:**
+  - Expanded [MCPServersView.tsx](file:///c:/Users/Administrator/Downloads/project/project_alpha/web/src/components/MCPServersView.tsx) to support Authentication Method selection (`NONE`, `OAUTH2_CLIENT_CREDENTIALS`, `STATIC_BEARER`, `BASIC`, `API_KEY`).
+  - Added dedicated OAuth2 M2M configuration inputs: Token Endpoint, Client ID, Client Secret, Scopes, and Audience.
+  - Added live "⚡ Test OAuth Token" probe button with instant latency, sample token preview, and validation reporting.
+  - Added Auth Type column badges (`OAuth2 (M2M)`, `Bearer`, `Basic`, `API Key`, `None`) in the server table.
+- [x] **3.2 Backend MCP Credential Sanitization & Masked Updates:**
+  - Updated [mcp_servers.go](file:///c:/Users/Administrator/Downloads/project/project_alpha/internal/api/admin/mcp_servers.go) to validate OAuth2 configuration requirements on registration and updates.
+  - Implemented secret masking (`••••••••`) across responses to protect credentials from exposure.
+  - Implemented masked credential preservation on update so operators can change scopes or endpoints without re-entering secrets.
+- [x] **3.3 Gateway Egress OAuth Token Provider & Proactive Renewal:**
+  - Created [oauth_token_provider.go](file:///c:/Users/Administrator/Downloads/project/project_alpha/internal/mcp/upstream/oauth_token_provider.go) with thread-safe in-memory caching (`sync.RWMutex`), proactive refresh before expiry (<60s), and SSRF-safe outbound HTTP client.
+  - Integrated with admin health probing (`POST /api/v1/mcp-servers/{id}/health`) and direct token acquisition (`POST /api/v1/mcp-servers/test-oauth`).
+  - Implemented anti-relay token delegation: downstream caller tokens are never passed upstream; M2M tokens are autonomously acquired and injected.
+  - Verified with comprehensive unit test suites and live end-to-end container integration script.
 
 ### Phase 4: Complete Portal Unification
 - [ ] **4.1 Embedded Tracing Experience:**
