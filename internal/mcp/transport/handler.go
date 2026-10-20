@@ -7,7 +7,7 @@ import (
 	"io"
 	"net/http"
 
-	"project_alpha/internal/api/middleware"
+	"project_alpha/internal/identity/principal"
 	"project_alpha/internal/mcp/aggregation"
 	"project_alpha/internal/mcp/protocol"
 	"project_alpha/internal/mcp/session"
@@ -151,21 +151,9 @@ func (h *GatewayHandler) dispatchMethod(ctx context.Context, tenantID string, re
 
 		// Phase 1 (Discovery Authorization): Filter tools visible to caller
 		if h.policyEngine != nil {
-			subject := middleware.GetSubject(ctx)
-			roles := middleware.GetRoles(ctx)
-			scopes := middleware.GetScopes(ctx)
-
-			var filtered []protocol.Tool
+			filtered := make([]protocol.Tool, 0, len(res.Tools))
 			for _, tool := range res.Tools {
-				evalCtx := &policy.Context{
-					Subject:  subject,
-					TenantID: tenantID,
-					Roles:    roles,
-					Scopes:   scopes,
-					Action:   policy.ActionMCPToolsDiscover,
-					Resource: tool.Name,
-				}
-				if h.policyEngine.IsAllowed(ctx, evalCtx) {
+				if h.isAllowed(ctx, tenantID, policy.ActionMCPToolsDiscover, tool.Name) {
 					filtered = append(filtered, tool)
 				}
 			}
@@ -185,22 +173,8 @@ func (h *GatewayHandler) dispatchMethod(ctx context.Context, tenantID string, re
 		}
 
 		// Phase 2 (Execution Authorization): Independent check at invocation time
-		if h.policyEngine != nil {
-			subject := middleware.GetSubject(ctx)
-			roles := middleware.GetRoles(ctx)
-			scopes := middleware.GetScopes(ctx)
-
-			evalCtx := &policy.Context{
-				Subject:  subject,
-				TenantID: tenantID,
-				Roles:    roles,
-				Scopes:   scopes,
-				Action:   policy.ActionMCPToolsCall,
-				Resource: params.Name,
-			}
-			if !h.policyEngine.IsAllowed(ctx, evalCtx) {
-				return protocol.NewErrorResponse(req.ID, protocol.CodeUnauthorized, fmt.Sprintf("unauthorized: caller not permitted to invoke tool %q", params.Name), nil)
-			}
+		if !h.isAllowed(ctx, tenantID, policy.ActionMCPToolsCall, params.Name) {
+			return protocol.NewErrorResponse(req.ID, protocol.CodeUnauthorized, fmt.Sprintf("unauthorized: caller not permitted to invoke tool %q", params.Name), nil)
 		}
 
 		res, err := h.aggregator.CallTool(ctx, tenantID, params.Name, params.Arguments)
@@ -215,6 +189,15 @@ func (h *GatewayHandler) dispatchMethod(ctx context.Context, tenantID string, re
 		if err != nil {
 			return protocol.NewErrorResponse(req.ID, protocol.CodeInternalError, fmt.Sprintf("failed listing resources: %v", err), nil)
 		}
+		if h.policyEngine != nil {
+			filtered := make([]protocol.Resource, 0, len(res.Resources))
+			for _, resource := range res.Resources {
+				if h.isAllowed(ctx, tenantID, policy.ActionMCPResourcesRead, resource.Name) {
+					filtered = append(filtered, resource)
+				}
+			}
+			res.Resources = filtered
+		}
 		resp, _ := protocol.NewResponse(req.ID, res)
 		return resp
 
@@ -222,6 +205,15 @@ func (h *GatewayHandler) dispatchMethod(ctx context.Context, tenantID string, re
 		res, err := h.aggregator.ListPrompts(ctx, tenantID)
 		if err != nil {
 			return protocol.NewErrorResponse(req.ID, protocol.CodeInternalError, fmt.Sprintf("failed listing prompts: %v", err), nil)
+		}
+		if h.policyEngine != nil {
+			filtered := make([]protocol.Prompt, 0, len(res.Prompts))
+			for _, prompt := range res.Prompts {
+				if h.isAllowed(ctx, tenantID, policy.ActionMCPPromptsRead, prompt.Name) {
+					filtered = append(filtered, prompt)
+				}
+			}
+			res.Prompts = filtered
 		}
 		resp, _ := protocol.NewResponse(req.ID, res)
 		return resp
@@ -235,7 +227,25 @@ func (h *GatewayHandler) dispatchMethod(ctx context.Context, tenantID string, re
 	}
 }
 
+func (h *GatewayHandler) isAllowed(ctx context.Context, tenantID, action, resource string) bool {
+	if h.policyEngine == nil {
+		return true
+	}
+	caller, ok := principal.FromContext(ctx)
+	if !ok || caller.Subject == "" || caller.TenantID == "" || caller.TenantID != tenantID {
+		return false
+	}
+	return h.policyEngine.IsAllowed(ctx, &policy.Context{
+		Subject: caller.Subject, TenantID: caller.TenantID,
+		Roles: caller.Roles, Scopes: caller.Scopes, Attributes: caller.Attributes,
+		Action: action, Resource: resource,
+	})
+}
+
 func (h *GatewayHandler) extractTenantID(r *http.Request) string {
+	if caller, ok := principal.FromContext(r.Context()); ok {
+		return caller.TenantID
+	}
 	if val := r.Context().Value(correlation.TenantIDKey); val != nil {
 		if tid, ok := val.(string); ok && tid != "" {
 			return tid

@@ -258,6 +258,18 @@ func (m *MockClient) AddTool(tool protocol.Tool, handler func(args json.RawMessa
 	}
 }
 
+func (m *MockClient) AddResource(resource protocol.Resource) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.resources = append(m.resources, resource)
+}
+
+func (m *MockClient) AddPrompt(prompt protocol.Prompt) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.prompts = append(m.prompts, prompt)
+}
+
 func (m *MockClient) Initialize(ctx context.Context) (*protocol.InitializeResult, error) {
 	return &protocol.InitializeResult{
 		ProtocolVersion: protocol.ProtocolVersion,

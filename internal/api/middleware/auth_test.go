@@ -43,12 +43,13 @@ func TestAuthMiddlewareAddsVerifiedPrincipalToRequestContext(t *testing.T) {
 	token, err := tokens.Sign(&tokens.Claims{
 		Issuer: "https://issuer.example", Subject: "user-1", Audience: "gateway-api",
 		TenantID: "tenant-1", Roles: []string{"user"}, Scopes: []string{"mcp:read"},
-		IssuedAt: time.Now().Unix(), ExpiresAt: time.Now().Add(time.Minute).Unix(), TokenID: "token-1",
+		Attributes: map[string]any{"environment": "production"},
+		IssuedAt:   time.Now().Unix(), ExpiresAt: time.Now().Add(time.Minute).Unix(), TokenID: "token-1",
 	}, active)
 	if err != nil {
 		t.Fatalf("sign test token: %v", err)
 	}
-	verifier := tokens.NewVerifier(keyManager, nil, "https://issuer.example", "gateway-api")
+	verifier := tokens.NewVerifier(keyManager, tokens.NewRevocationManager(), "https://issuer.example", "gateway-api")
 
 	var got principal.Principal
 	handler := AuthMiddleware(verifier, policy.NewEngine())(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
@@ -67,5 +68,8 @@ func TestAuthMiddlewareAddsVerifiedPrincipalToRequestContext(t *testing.T) {
 	}
 	if len(got.Scopes) != 1 || got.Scopes[0] != "mcp:read" {
 		t.Fatalf("principal scopes = %v, want [mcp:read]", got.Scopes)
+	}
+	if got.Attributes["environment"] != "production" {
+		t.Fatalf("principal attributes = %v, want signed environment attribute", got.Attributes)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -158,6 +159,65 @@ func TestSQLStorePersistsAndConsumesAuthorizationCode(t *testing.T) {
 	}
 }
 
+func TestSQLStoreRevokesAccessTokensDurably(t *testing.T) {
+	store, closeDB := newTestSQLStore(t)
+	defer closeDB()
+	clientRegistration := &Client{
+		ID: "revoke-record", ClientID: "revoke-client", ClientType: "CONFIDENTIAL",
+		ClientSecret: "long-enough-confidential-client-secret-value", TenantID: "tenant-1",
+		AllowedGrantTypes: []string{"client_credentials"}, AllowedScopes: []string{"mcp:read"},
+	}
+	if err := store.RegisterClient(context.Background(), clientRegistration); err != nil {
+		t.Fatalf("register client: %v", err)
+	}
+	client, err := store.GetClient(context.Background(), clientRegistration.ClientID)
+	if err != nil {
+		t.Fatalf("load client: %v", err)
+	}
+	expiresAt := time.Now().Add(time.Hour).UTC()
+	const tokenID = "stable-token-jti"
+	session := &oauth2.JWTSession{
+		JWTClaims: &jwt.JWTClaims{
+			Subject: "revoke-client", Issuer: "https://issuer.example",
+			Audience: []string{"gateway-api"}, JTI: tokenID, IssuedAt: time.Now().UTC(),
+			ExpiresAt: expiresAt, Extra: map[string]interface{}{
+				"tenant_id": "tenant-1", "roles": []string{"client"},
+			},
+		},
+	}
+	session.SetSubject(client.GetID())
+	session.SetExpiresAt(fosite.AccessToken, expiresAt)
+	request := &fosite.Request{
+		ID: "revoke-request", RequestedAt: time.Now().UTC(), Client: client,
+		GrantedScope: fosite.Arguments{"mcp:read"}, RequestedScope: fosite.Arguments{"mcp:read"},
+		Session: session,
+	}
+	if err := store.CreateAccessTokenSession(context.Background(), "access-signature", request); err != nil {
+		t.Fatalf("persist access token session: %v", err)
+	}
+	if err := store.RevokeAccessToken(context.Background(), request.ID); err != nil {
+		t.Fatalf("revoke access token: %v", err)
+	}
+	revocations, err := tokens.NewSQLRevocationStore(store.db)
+	if err != nil {
+		t.Fatalf("create revocation store: %v", err)
+	}
+	revoked, err := revocations.CheckRevoked(context.Background(), tokenID)
+	if err != nil || !revoked {
+		t.Fatalf("revocation lookup = (%t, %v), want true and no error", revoked, err)
+	}
+	var invalidated bool
+	if err := store.db.QueryRowContext(context.Background(), `
+		SELECT invalidated FROM oauth_sessions WHERE token_type = $1 AND signature = $2`,
+		fositeAccessToken, "access-signature",
+	).Scan(&invalidated); err != nil {
+		t.Fatalf("read invalidated access token: %v", err)
+	}
+	if !invalidated {
+		t.Fatal("access token session was not invalidated")
+	}
+}
+
 type allowFositeAuthorization struct{}
 
 func (allowFositeAuthorization) Authorize(_ context.Context, _ *http.Request, _ *Client, scopes []string) (AuthorizationDecision, error) {
@@ -240,7 +300,7 @@ func TestFositeServerAuthorizationCodeWithPKCEIssuesVerifiableJWT(t *testing.T) 
 	if err := json.Unmarshal(tokenResponse.Body.Bytes(), &response); err != nil {
 		t.Fatalf("decode token response: %v", err)
 	}
-	tokenVerifier := tokens.NewVerifier(keyManager, nil, "https://issuer.example", "gateway-api")
+	tokenVerifier := tokens.NewVerifier(keyManager, tokens.NewRevocationManager(), "https://issuer.example", "gateway-api")
 	claims, err := tokenVerifier.Verify(response.AccessToken)
 	if err != nil {
 		t.Fatalf("verify Fosite-issued access token: %v", err)
@@ -292,7 +352,7 @@ func TestFositeServerClientCredentialsIssuesTenantScopedJWT(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &tokenResponse); err != nil {
 		t.Fatalf("decode token response: %v", err)
 	}
-	claims, err := tokens.NewVerifier(keyManager, nil, "https://issuer.example", "gateway-api").Verify(tokenResponse.AccessToken)
+	claims, err := tokens.NewVerifier(keyManager, tokens.NewRevocationManager(), "https://issuer.example", "gateway-api").Verify(tokenResponse.AccessToken)
 	if err != nil {
 		t.Fatalf("verify client credentials token: %v", err)
 	}
@@ -301,6 +361,24 @@ func TestFositeServerClientCredentialsIssuesTenantScopedJWT(t *testing.T) {
 	}
 	if len(claims.Roles) != 1 || claims.Roles[0] != "client" {
 		t.Fatalf("client credentials roles = %v, want [client]", claims.Roles)
+	}
+
+	revocationStore, err := tokens.NewSQLRevocationStore(store.db)
+	if err != nil {
+		t.Fatalf("create SQL revocation store: %v", err)
+	}
+	verifier := tokens.NewVerifier(keyManager, revocationStore, "https://issuer.example", "gateway-api")
+	revokeForm := url.Values{"token": {tokenResponse.AccessToken}, "token_type_hint": {"access_token"}}
+	revokeRequest := httptest.NewRequest(http.MethodPost, "/oauth/revoke", strings.NewReader(revokeForm.Encode()))
+	revokeRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	revokeRequest.SetBasicAuth("machine-client", secret)
+	revokeResponse := httptest.NewRecorder()
+	server.HandleRevoke(revokeResponse, revokeRequest)
+	if revokeResponse.Code != http.StatusOK {
+		t.Fatalf("revocation status = %d, want %d: %s", revokeResponse.Code, http.StatusOK, revokeResponse.Body.String())
+	}
+	if _, err := verifier.VerifyContext(context.Background(), tokenResponse.AccessToken); !errors.Is(err, tokens.ErrTokenRevoked) {
+		t.Fatalf("revoked access token verification error = %v, want ErrTokenRevoked", err)
 	}
 
 	form.Set("scope", "mcp:admin")

@@ -24,6 +24,8 @@ Enterprise AI deployments span internal employees, third-party developers, autom
    - **Role-Based Access Control (RBAC)**: Baseline roles (`platform-admin`, `tenant-admin`, `agent-operator`, `tool-consumer`, `auditor`).
    - **Attribute-Based Access Control (ABAC)**: Evaluates dynamic conditions (e.g., environment tags, IP CIDR, project boundary, tool parameter constraints).
    - Strict deny-by-default evaluation.
+   - MCP discovery and invocation require an authenticated principal whose tenant matches the requested tenant. Tool, resource, and prompt catalogs are filtered independently, and tool calls are checked again at invocation.
+   - Policies may restrict roles, required token scopes, and trusted signed-token attributes; action-specific OAuth scopes are checked independently of policy rules. Explicit deny rules take precedence over the platform-admin role bypass.
 5. **Downstream Token Security & Anti-Relay**:
    - Inbound client tokens are **never forwarded** directly to upstream servers.
    - Gateway establishes downstream identity via:
@@ -38,3 +40,4 @@ Enterprise AI deployments span internal employees, third-party developers, autom
 
 ### Negative
 - Token exchange and ABAC evaluation add a small latency overhead (mitigated by in-memory key and policy caching).
+- The current gateway executable does not yet configure authentication middleware or load persisted policy records. These component-level enforcement paths are not active in the runtime until the remaining wiring and policy repository work is completed.

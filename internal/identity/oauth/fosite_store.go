@@ -13,6 +13,8 @@ import (
 	"github.com/ory/fosite"
 	"github.com/ory/fosite/handler/oauth2"
 	"github.com/ory/fosite/handler/pkce"
+
+	"project_alpha/internal/identity/tokens"
 )
 
 const (
@@ -477,7 +479,84 @@ func (s *SQLStore) RevokeRefreshToken(ctx context.Context, requestID string) err
 }
 
 func (s *SQLStore) RevokeAccessToken(ctx context.Context, requestID string) error {
-	return s.revokeByRequestID(ctx, fositeAccessToken, requestID)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin access token revocation: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT signature, request_json, expires_at FROM oauth_sessions
+		WHERE token_type = $1 AND invalidated = 0 AND expires_at > $2`,
+		fositeAccessToken, time.Now().UTC(),
+	)
+	if err != nil {
+		return fmt.Errorf("query access tokens for revocation: %w", err)
+	}
+	type revokedSession struct {
+		signature string
+		tokenID   string
+		expiresAt time.Time
+	}
+	var matches []revokedSession
+	for rows.Next() {
+		var signature, payload string
+		var expiresAt time.Time
+		if err := rows.Scan(&signature, &payload, &expiresAt); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("read access token for revocation: %w", err)
+		}
+		var snapshot requestSnapshot
+		if err := json.Unmarshal([]byte(payload), &snapshot); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("decode access token for revocation: %w", err)
+		}
+		if snapshot.ID != requestID {
+			continue
+		}
+		if snapshot.Session == nil || snapshot.Session.GetJWTClaims() == nil {
+			_ = rows.Close()
+			return fmt.Errorf("access token session %q has no JWT claims", requestID)
+		}
+		tokenID := snapshot.Session.GetJWTClaims().ToMapClaims()["jti"]
+		jti, ok := tokenID.(string)
+		if !ok || jti == "" {
+			_ = rows.Close()
+			return fmt.Errorf("access token session %q has no JWT ID", requestID)
+		}
+		matches = append(matches, revokedSession{signature: signature, tokenID: jti, expiresAt: expiresAt})
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("iterate access tokens for revocation: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close access token revocation query: %w", err)
+	}
+	if len(matches) == 0 {
+		return fosite.ErrNotFound
+	}
+	for _, match := range matches {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO token_revocations (token_id_hash, expires_at)
+			VALUES ($1, $2)
+			ON CONFLICT (token_id_hash) DO UPDATE SET expires_at = excluded.expires_at`,
+			tokens.RevocationKey(match.tokenID), match.expiresAt,
+		); err != nil {
+			return fmt.Errorf("persist access token revocation: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE oauth_sessions SET invalidated = 1
+			WHERE token_type = $1 AND signature = $2`,
+			fositeAccessToken, match.signature,
+		); err != nil {
+			return fmt.Errorf("invalidate access token session: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit access token revocation: %w", err)
+	}
+	return nil
 }
 
 func (s *SQLStore) deleteSession(ctx context.Context, tokenType, signature string) error {

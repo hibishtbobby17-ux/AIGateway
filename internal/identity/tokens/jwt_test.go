@@ -1,12 +1,16 @@
 package tokens
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"project_alpha/internal/config"
 	"project_alpha/internal/identity/keys"
+	"project_alpha/internal/storage"
+	"project_alpha/migrations"
 )
 
 func TestJWTSignAndVerify(t *testing.T) {
@@ -84,9 +88,8 @@ func TestJWTSignAndVerify(t *testing.T) {
 func TestJWTIssuerAndAudienceValidation(t *testing.T) {
 	km, _ := keys.NewManager()
 	activeKey, _ := km.GetActiveKey()
-	verifier := NewVerifier(km, nil, "https://expected-issuer.com", "https://expected-aud.com")
+	verifier := NewVerifier(km, NewRevocationManager(), "https://expected-issuer.com", "https://expected-aud.com")
 
-	// Wrong issuer
 	c1 := &Claims{
 		Issuer:    "https://wrong-issuer.com",
 		Audience:  "https://expected-aud.com",
@@ -119,5 +122,170 @@ func TestJWTIssuerAndAudienceValidation(t *testing.T) {
 	_, err = verifier.Verify(t3)
 	if !errors.Is(err, ErrInvalidAudience) {
 		t.Errorf("expected ErrInvalidAudience for missing aud, got: %v", err)
+	}
+}
+
+func TestJWTVerifierRejectsMissingRequiredClaimsAndFutureTimes(t *testing.T) {
+	km, err := keys.NewManager()
+	if err != nil {
+		t.Fatalf("create key manager: %v", err)
+	}
+	active, err := km.GetActiveKey()
+	if err != nil {
+		t.Fatalf("get active key: %v", err)
+	}
+	now := time.Now()
+	valid := Claims{
+		Issuer: "https://issuer.example", Subject: "user-1", Audience: "gateway-api",
+		TenantID: "tenant-1", Scopes: []string{"mcp:read"}, Roles: []string{"user"},
+		IssuedAt: now.Unix(), ExpiresAt: now.Add(time.Hour).Unix(), TokenID: "token-1",
+	}
+	tests := []struct {
+		name   string
+		change func(*Claims)
+		want   error
+	}{
+		{name: "missing subject", change: func(c *Claims) { c.Subject = "" }, want: ErrInvalidClaims},
+		{name: "missing tenant", change: func(c *Claims) { c.TenantID = "" }, want: ErrInvalidClaims},
+		{name: "missing token id", change: func(c *Claims) { c.TokenID = "" }, want: ErrInvalidClaims},
+		{name: "missing roles", change: func(c *Claims) { c.Roles = nil }, want: ErrInvalidClaims},
+		{name: "missing scopes", change: func(c *Claims) { c.Scopes = nil }, want: ErrInvalidClaims},
+		{name: "future issued at", change: func(c *Claims) { c.IssuedAt = now.Add(time.Minute).Unix() }, want: ErrInvalidClaims},
+		{name: "not yet valid", change: func(c *Claims) { c.NotBefore = now.Add(time.Minute).Unix() }, want: ErrTokenNotYetValid},
+	}
+	verifier := NewVerifier(km, NewRevocationManager(), valid.Issuer, valid.Audience)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			claims := valid
+			test.change(&claims)
+			token, err := Sign(&claims, active)
+			if err != nil {
+				t.Fatalf("sign token: %v", err)
+			}
+			if _, err := verifier.Verify(token); !errors.Is(err, test.want) {
+				t.Fatalf("Verify() error = %v, want %v", err, test.want)
+			}
+		})
+	}
+}
+
+func TestSQLRevocationStorePersistsAcrossInstances(t *testing.T) {
+	ctx := context.Background()
+	db, err := storage.OpenDB(&config.DatabaseConfig{Driver: "sqlite", URL: ":memory:", MaxConns: 1})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	defer db.Close()
+	if err := migrations.MigrateUp(ctx, db); err != nil {
+		t.Fatalf("apply migrations: %v", err)
+	}
+	first, err := NewSQLRevocationStore(db)
+	if err != nil {
+		t.Fatalf("create SQL revocation store: %v", err)
+	}
+	expiry := time.Now().Add(time.Hour)
+	if err := first.Revoke(ctx, "sensitive-token-id", expiry); err != nil {
+		t.Fatalf("persist revocation: %v", err)
+	}
+	second, err := NewSQLRevocationStore(db)
+	if err != nil {
+		t.Fatalf("create second SQL revocation store: %v", err)
+	}
+	revoked, err := second.CheckRevoked(ctx, "sensitive-token-id")
+	if err != nil || !revoked {
+		t.Fatalf("persisted revocation = (%t, %v), want true and no error", revoked, err)
+	}
+	revoked, err = second.CheckRevoked(ctx, "another-token-id")
+	if err != nil || revoked {
+		t.Fatalf("unknown revocation = (%t, %v), want false and no error", revoked, err)
+	}
+	if err := first.Revoke(ctx, "sensitive-token-id", time.Now().Add(-time.Minute)); err != nil {
+		t.Fatalf("ignore already expired revocation: %v", err)
+	}
+	revoked, err = second.CheckRevoked(ctx, "sensitive-token-id")
+	if err != nil || !revoked {
+		t.Fatalf("expired re-revocation erased active record = (%t, %v)", revoked, err)
+	}
+}
+
+func TestVerifierFailsClosedWhenRevocationStoreFails(t *testing.T) {
+	km, err := keys.NewManager()
+	if err != nil {
+		t.Fatalf("create key manager: %v", err)
+	}
+
+	active, err := km.GetActiveKey()
+	if err != nil {
+		t.Fatalf("get active key: %v", err)
+	}
+	now := time.Now()
+	token, err := Sign(&Claims{
+		Issuer: "https://issuer.example", Subject: "user-1", Audience: "gateway-api",
+		TenantID: "tenant-1", Scopes: []string{"mcp:read"}, Roles: []string{"user"},
+		IssuedAt: now.Unix(), ExpiresAt: now.Add(time.Hour).Unix(), TokenID: "token-1",
+	}, active)
+	if err != nil {
+		t.Fatalf("sign token: %v", err)
+	}
+	db, err := storage.OpenDB(&config.DatabaseConfig{Driver: "sqlite", URL: ":memory:", MaxConns: 1})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	defer db.Close()
+	store, err := NewSQLRevocationStore(db)
+	if err != nil {
+		t.Fatalf("create SQL revocation store: %v", err)
+	}
+	verifier := NewVerifier(km, store, "https://issuer.example", "gateway-api")
+	if _, err := verifier.Verify(token); !errors.Is(err, ErrRevocationCheck) {
+		t.Fatalf("Verify() error = %v, want ErrRevocationCheck when storage is unavailable", err)
+	}
+}
+
+func TestVerifierRequiresRevocationStore(t *testing.T) {
+	km, err := keys.NewManager()
+	if err != nil {
+		t.Fatalf("create key manager: %v", err)
+	}
+
+	active, err := km.GetActiveKey()
+	if err != nil {
+		t.Fatalf("get active key: %v", err)
+	}
+	now := time.Now()
+	token, err := Sign(&Claims{
+		Issuer: "https://issuer.example", Subject: "user-1", Audience: "gateway-api",
+		TenantID: "tenant-1", Scopes: []string{"mcp:read"}, Roles: []string{"user"},
+		IssuedAt: now.Unix(), ExpiresAt: now.Add(time.Hour).Unix(), TokenID: "token-1",
+	}, active)
+	if err != nil {
+		t.Fatalf("sign token: %v", err)
+	}
+	if _, err := NewVerifier(km, nil, "https://issuer.example", "gateway-api").Verify(token); !errors.Is(err, ErrRevocationStore) {
+		t.Fatalf("Verify() error = %v, want ErrRevocationStore", err)
+	}
+}
+
+func TestVerifierRequiresIssuerAndAudienceConfiguration(t *testing.T) {
+	km, err := keys.NewManager()
+	if err != nil {
+		t.Fatalf("create key manager: %v", err)
+	}
+	active, err := km.GetActiveKey()
+	if err != nil {
+		t.Fatalf("get active key: %v", err)
+	}
+	now := time.Now()
+	token, err := Sign(&Claims{
+		Issuer: "https://issuer.example", Subject: "user-1", Audience: "gateway-api",
+		TenantID: "tenant-1", Scopes: []string{"mcp:read"}, Roles: []string{"user"},
+		IssuedAt: now.Unix(), ExpiresAt: now.Add(time.Hour).Unix(), TokenID: "token-1",
+	}, active)
+	if err != nil {
+		t.Fatalf("sign token: %v", err)
+	}
+	verifier := NewVerifier(km, NewRevocationManager(), "", "gateway-api")
+	if _, err := verifier.Verify(token); !errors.Is(err, ErrVerifierConfig) {
+		t.Fatalf("Verify() error = %v, want ErrVerifierConfig", err)
 	}
 }

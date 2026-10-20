@@ -15,6 +15,9 @@ Resource-owner authentication and consent must be provided by a trusted identity
 - Compose only the authorization-code, client-credentials, PKCE, and token-revocation handlers needed by this milestone. Do not enable implicit or password grants.
 - Require PKCE for authorization-code flows and disable the `plain` challenge method.
 - Persist OAuth client registrations, authorization-code/PKCE state, access/refresh grant sessions, and client-assertion replay identifiers in the platform SQL database.
+- Require JWT verifiers to be configured with a signing-key manager, expected issuer and audience, and an explicit revocation checker. Missing verifier configuration or revocation-store failures reject tokens; there is no implicit process-local production fallback.
+- Validate ES256 token type and key ID, signature, exact configured issuer/audience, required expiry/issued-at/subject/tenant/JTI/role/scope claims, and not-before time.
+- Store revoked token identifiers as SHA-256 hashes in SQL until token expiry. Fosite access-token revocation invalidates its stored session and persists the associated JTI revocation in the same transaction; resource-server verification checks the shared revocation table on each token.
 - Persist only hashed confidential-client secrets. Use Fosite's BCrypt hasher by default; `SQLStore` and `FositeServer` accept an injected Fosite-compatible hasher so deployment configuration can select a stronger policy without storing cleartext secrets.
 - Issue ES256 JWT access tokens using the platform signing-key manager. Include a `kid`, issuer, audience, subject, tenant, roles, and scopes so tokens can be consumed by the existing verifier.
 - Persist ES256 signing keys in the shared SQL database with AES-256-GCM encrypted private scalars. The encryption key is supplied separately to `NewPersistentManager` and must be shared across replicas; there is no insecure fallback to process-local keys in persistent mode.
@@ -30,6 +33,7 @@ Resource-owner authentication and consent must be provided by a trusted identity
 - OAuth request validation and grant processing use a dedicated protocol framework instead of bespoke endpoint logic.
 - One-time code, PKCE, and client registration state survive process restarts when stored in SQL.
 - Signing keys are encrypted at rest and shared across replicas; previous keys remain published after rotation for token verification.
+- Access-token revocation is shared across replicas and survives restarts; the verifier fails closed if the revocation store cannot be checked.
 - The authorization boundary is explicit and fail-closed; the framework cannot infer user identity from query parameters.
 - Existing verified bearer-token identity can be used as the resource owner, while SQL consent records restrict authorization to explicit prior approval.
 - ES256 access tokens retain the claims needed by existing gateway token validation.
@@ -40,4 +44,5 @@ Resource-owner authentication and consent must be provided by a trusted identity
 - The provider cannot be safely exposed until the platform persists and shares signing keys, wires authenticated user/consent, and ensures token revocation is enforced by resource servers.
 - Deployments must provision and consistently distribute a 32-byte signing-key encryption secret outside the SQL database (environment variable `GATEWAY_SIGNING_KEY_ENCRYPTION_KEY`, encoded as exactly 64 hexadecimal characters). The secret is excluded from config serialization. This component does not yet define secret-manager integration or old-key retirement policy.
 - The SQL consent implementation has no user-facing approval interface or administrative grant API. Integrators must ensure only a trusted, authorized control-plane path can create consent records.
+- Durable JWT revocation adds a SQL lookup to each token verification. Deployments must keep the shared database available to authorization and resource-serving processes; a database outage causes protected requests to fail closed.
 - This decision implements OAuth protocol handling, not the complete built-in identity provider or external OIDC federation.

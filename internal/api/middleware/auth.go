@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -73,8 +74,12 @@ func AuthMiddleware(verifier *tokens.Verifier, engine *policy.Engine) func(http.
 			}
 
 			tokenStr := strings.TrimSpace(authHeader[7:])
-			claims, err := verifier.Verify(tokenStr)
+			claims, err := verifier.VerifyContext(r.Context(), tokenStr)
 			if err != nil {
+				if errors.Is(err, tokens.ErrRevocationCheck) || errors.Is(err, tokens.ErrRevocationStore) {
+					writeAuthError(w, http.StatusServiceUnavailable, "token revocation status is unavailable")
+					return
+				}
 				writeAuthError(w, http.StatusUnauthorized, "token verification failed: "+err.Error())
 				return
 			}
@@ -94,15 +99,27 @@ func AuthMiddleware(verifier *tokens.Verifier, engine *policy.Engine) func(http.
 			ctx = context.WithValue(ctx, RolesKey, claims.Roles)
 			ctx = context.WithValue(ctx, ScopesKey, claims.Scopes)
 			ctx = principal.WithContext(ctx, principal.Principal{
-				Subject:  claims.Subject,
-				TenantID: claims.TenantID,
-				Roles:    append([]string(nil), claims.Roles...),
-				Scopes:   append([]string(nil), claims.Scopes...),
+				Subject:    claims.Subject,
+				TenantID:   claims.TenantID,
+				Roles:      append([]string(nil), claims.Roles...),
+				Scopes:     append([]string(nil), claims.Scopes...),
+				Attributes: cloneAttributes(claims.Attributes),
 			})
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+func cloneAttributes(attributes map[string]any) map[string]any {
+	if attributes == nil {
+		return nil
+	}
+	cloned := make(map[string]any, len(attributes))
+	for key, value := range attributes {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func isPublicEndpoint(p string) bool {

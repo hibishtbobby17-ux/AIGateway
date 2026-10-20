@@ -2,7 +2,9 @@ package oauth
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -95,6 +97,7 @@ func (s *FositeServer) RegisterClient(ctx context.Context, client *Client) error
 func (s *FositeServer) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("/oauth/authorize", s.HandleAuthorize)
 	mux.HandleFunc("/oauth/token", s.HandleToken)
+	mux.HandleFunc("/oauth/revoke", s.HandleRevoke)
 	mux.HandleFunc("/.well-known/jwks.json", s.HandleJWKS)
 }
 
@@ -163,6 +166,12 @@ func (s *FositeServer) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 			},
 		},
 	}
+	tokenID, err := newTokenID()
+	if err != nil {
+		s.provider.WriteAuthorizeError(r.Context(), w, authorizeRequest, fosite.ErrServerError)
+		return
+	}
+	session.JWTClaims.JTI = tokenID
 	session.SetSubject(decision.Subject)
 	response, err := s.provider.NewAuthorizeResponse(r.Context(), authorizeRequest, session)
 	if err != nil {
@@ -208,9 +217,15 @@ func (s *FositeServer) HandleToken(w http.ResponseWriter, r *http.Request) {
 		}
 		accessRequest.GrantAudience(s.audience)
 		session.Subject = client.GetID()
+		tokenID, err := newTokenID()
+		if err != nil {
+			s.provider.WriteAccessError(r.Context(), w, accessRequest, fosite.ErrServerError)
+			return
+		}
 		session.JWTClaims = &jwt.JWTClaims{
 			Subject:  client.GetID(),
 			Audience: []string{s.audience},
+			JTI:      tokenID,
 			Extra: map[string]interface{}{
 				"tenant_id": client.TenantID,
 				"roles":     []string{"client"},
@@ -223,6 +238,26 @@ func (s *FositeServer) HandleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.provider.WriteAccessResponse(r.Context(), w, accessRequest, response)
+}
+
+func (s *FositeServer) HandleRevoke(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method must be POST", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	r.Body = http.MaxBytesReader(w, r.Body, 32*1024)
+	err := s.provider.NewRevocationRequest(r.Context(), r)
+	s.provider.WriteRevocationResponse(r.Context(), w, err)
+}
+
+func newTokenID() (string, error) {
+	random := make([]byte, 32)
+	if _, err := rand.Read(random); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(random), nil
 }
 
 func (c *tenantClient) toRegistration() *Client {

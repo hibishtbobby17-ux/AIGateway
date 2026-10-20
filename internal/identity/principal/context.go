@@ -3,10 +3,11 @@ package principal
 import "context"
 
 type Principal struct {
-	Subject  string
-	TenantID string
-	Roles    []string
-	Scopes   []string
+	Subject    string
+	TenantID   string
+	Roles      []string
+	Scopes     []string
+	Attributes map[string]any
 }
 
 type contextKey struct{}
