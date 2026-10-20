@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"project_alpha/internal/identity/principal"
 	"project_alpha/internal/identity/tokens"
 	"project_alpha/internal/observability/correlation"
 	"project_alpha/internal/policy"
@@ -92,6 +93,12 @@ func AuthMiddleware(verifier *tokens.Verifier, engine *policy.Engine) func(http.
 			ctx = context.WithValue(ctx, SubjectKey, claims.Subject)
 			ctx = context.WithValue(ctx, RolesKey, claims.Roles)
 			ctx = context.WithValue(ctx, ScopesKey, claims.Scopes)
+			ctx = principal.WithContext(ctx, principal.Principal{
+				Subject:  claims.Subject,
+				TenantID: claims.TenantID,
+				Roles:    append([]string(nil), claims.Roles...),
+				Scopes:   append([]string(nil), claims.Scopes...),
+			})
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

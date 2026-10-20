@@ -231,7 +231,8 @@ Tasks
 - [x] Define the baseline tenant-scoped OAuth client, grant, redirect URI, scope, issuer/audience, and policy models.
 - [x] Integrate ORY Fosite for composed OAuth authorization-code and client-credentials endpoint handling with PKCE S256.
 - [x] Add SQL persistence for tenant-scoped client registrations, confidential secret hashes, authorization-code/PKCE state, access/refresh sessions, and client-assertion replay IDs.
-- [x] Provide an injectable authorization/consent boundary and fail closed when it is not configured; a concrete user authentication and consent workflow remains outstanding.
+- [x] Provide an injectable authorization/consent boundary and fail closed when it is not configured; use the authenticated principal from verified bearer-token middleware and persist explicit, tenant-scoped client consent in SQL.
+- [ ] Implement interactive user login and consent UX/approval flow; preapproved SQL consent grants are not a user-facing IdP or standalone production login experience.
 - [x] Issue Fosite ES256 JWT access tokens with key IDs and tenant/scope claims compatible with the platform verifier.
 - [ ] Wire the provider into runtime endpoints after shared signing-key persistence and authenticated user/consent are available.
 - [ ] Integrate external OIDC discovery and issuer validation.
@@ -408,13 +409,13 @@ Maintain this checklist at the end of every coding session:
 | Field | Current Status |
 | :--- | :--- |
 | **Current milestone** | Milestone 3: Identity and authorization (in progress) |
-| **Completed tasks** | Milestones 0-2 as recorded above. Milestone 3 OAuth framework slice: Fosite provider component with authorization-code/PKCE and client-credentials endpoints, SQL-backed clients and token grant state, hashed client secrets, tenant-aware authorization-service hook, ES256 tokens compatible with the verifier, encrypted shared SQL signing-key storage with refresh-on-read rotation/JWKS, and focused persistence/protocol tests. |
-| **In progress** | Connect authenticated-user/consent and external OIDC flows; integrate a production secret manager for the shared signing-key encryption secret (environment-based local/deployment injection is documented). |
-| **Blocked** | No user/consent implementation exists yet, so the provider component is not mounted by the runtime executables. Authorization requests fail closed without the injected service. |
-| **Tests executed** | `go test ./...`, `go vet ./...`, focused key/OAuth/storage/migration tests, and `git diff --check` pass. Race tests are unavailable because the local Go toolchain requires CGO for race builds and CGO is disabled. |
-| **Known defects** | OAuth provider endpoints are not yet wired into the control-plane runtime; production key-encryption secret provisioning and old-key retirement policy are not integrated. External OIDC discovery, concrete user authentication/consent, and durable revocation enforcement remain incomplete. |
+| **Completed tasks** | Milestones 0-2 as recorded above. Milestone 3 OAuth framework slice: Fosite provider component with authorization-code/PKCE and client-credentials endpoints, SQL-backed clients/grant state/explicit user consent, hashed client secrets, verified bearer-token principal propagation, tenant-aware consent authorization, ES256 tokens compatible with the verifier, encrypted shared SQL signing-key storage with refresh-on-read rotation/JWKS, and focused tests. |
+| **In progress** | Implement secure token validation/revocation and external OIDC flows; integrate a production secret manager for the shared signing-key encryption secret (environment-based local/deployment injection is documented). |
+| **Blocked** | OAuth provider remains unmounted because interactive login and user-facing consent approval are not implemented, and production signing-key secret provisioning is not integrated. The service denies authorization without verified principal context and an explicit server-side consent record. |
+| **Tests executed** | `go test ./...`, `go vet ./...`, focused consent/OAuth/middleware/storage tests, and `git diff --check` pass. Race tests are unavailable because the local Go toolchain requires CGO for race builds and CGO is disabled. |
+| **Known defects** | OAuth provider endpoints are not wired into runtime. Interactive login/consent UX, production key-encryption secret provisioning, old-key retirement policy, external OIDC discovery, and durable revocation enforcement remain incomplete. |
 | **Architectural decisions** | ADR-0001 through ADR-0009 active. Pinned MCP version 2024-11-05. |
-| **Next task** | Implement a concrete authenticated user/consent service and managed signing-key secret provisioning, then mount the Fosite routes in the control plane. |
+| **Next task** | Implement strict token validation and durable revocation semantics; keep runtime OAuth routes gated until interactive login/consent and production secret provisioning exist. |
 
 15. First action
 
