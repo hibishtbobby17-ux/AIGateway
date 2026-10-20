@@ -122,6 +122,9 @@ func TestSQLiteDatabaseMigrationsAndRepository(t *testing.T) {
 
 	// 5. Test Rollback (MigrateDown)
 	if err := migrations.MigrateDown(ctx, db); err != nil {
+		t.Fatalf("failed rolling back policy attributes migration: %v", err)
+	}
+	if err := migrations.MigrateDown(ctx, db); err != nil {
 		t.Fatalf("failed rolling back token revocation migration: %v", err)
 	}
 	if err := migrations.MigrateDown(ctx, db); err != nil {

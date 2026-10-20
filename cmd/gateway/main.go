@@ -11,12 +11,16 @@ import (
 	"time"
 
 	"project_alpha/internal/api/health"
+	"project_alpha/internal/api/middleware"
 	"project_alpha/internal/config"
+	"project_alpha/internal/identity/keys"
+	"project_alpha/internal/identity/tokens"
 	"project_alpha/internal/mcp/aggregation"
 	"project_alpha/internal/mcp/registry"
 	"project_alpha/internal/mcp/session"
 	"project_alpha/internal/mcp/transport"
 	"project_alpha/internal/observability/correlation"
+	"project_alpha/internal/policy"
 	"project_alpha/internal/storage"
 )
 
@@ -37,18 +41,61 @@ func main() {
 	// 3. Initialize health and readiness probes
 	healthHandler := health.NewHandler()
 
-	// 4. Initialize Database Connection
+	// 4. Initialize shared database-backed identity and policy state.
 	db, err := storage.OpenDB(&cfg.Database)
 	if err != nil {
-		logger.Warn("database connection failed on startup; will retry in background", "error", err)
-	} else {
-		defer db.Close()
-		healthHandler.RegisterCheck("database", func() error {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
-			return db.PingContext(ctx)
-		})
-		logger.Info("database connection pool initialized", "driver", cfg.Database.Driver)
+		logger.Error("database connection failed; gateway cannot safely validate tokens", "error", err)
+		os.Exit(1)
+	}
+	defer db.Close()
+	healthHandler.RegisterCheck("database", func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		return db.PingContext(ctx)
+	})
+	logger.Info("database connection pool initialized", "driver", cfg.Database.Driver)
+
+	signingKeyEncryptionKey, err := cfg.SigningKeyEncryptionKey()
+	if err != nil {
+		logger.Error("persistent signing-key encryption is required", "error", err)
+		os.Exit(1)
+	}
+	keyRepository, err := keys.NewSQLRepository(db)
+	if err != nil {
+		logger.Error("signing-key repository initialization failed", "error", err)
+		os.Exit(1)
+	}
+	startupCtx, cancelStartup := context.WithTimeout(context.Background(), 10*time.Second)
+	keyManager, err := keys.NewPersistentManager(startupCtx, keyRepository, signingKeyEncryptionKey)
+	cancelStartup()
+	if err != nil {
+		logger.Error("persistent signing-key initialization failed", "error", err)
+		os.Exit(1)
+	}
+	revocationStore, err := tokens.NewSQLRevocationStore(db)
+	if err != nil {
+		logger.Error("token revocation store initialization failed", "error", err)
+		os.Exit(1)
+	}
+	revocationCtx, cancelRevocation := context.WithTimeout(context.Background(), 10*time.Second)
+	err = revocationStore.Validate(revocationCtx)
+	cancelRevocation()
+	if err != nil {
+		logger.Error("token revocation schema validation failed", "error", err)
+		os.Exit(1)
+	}
+	verifier := tokens.NewVerifier(keyManager, revocationStore, cfg.Security.JWTIssuer, cfg.Security.JWTAudience)
+	policyRepository, err := policy.NewSQLRepository(db)
+	if err != nil {
+		logger.Error("policy repository initialization failed", "error", err)
+		os.Exit(1)
+	}
+	policyCtx, cancelPolicies := context.WithTimeout(context.Background(), 10*time.Second)
+	policyEngine, err := policyRepository.LoadEngine(policyCtx)
+	cancelPolicies()
+	if err != nil {
+		logger.Error("persisted policy loading failed", "error", err)
+		os.Exit(1)
 	}
 
 	// 5. Initialize MCP Gateway Core
@@ -56,6 +103,7 @@ func main() {
 	mcpAggregator := aggregation.NewAggregator(mcpRegistry, 5*time.Minute)
 	mcpSessions := session.NewManager()
 	mcpHandler := transport.NewGatewayHandler(mcpAggregator, mcpSessions, "default")
+	mcpHandler.SetPolicyEngine(policyEngine)
 	logger.Info("MCP Gateway engine initialized", "protocol_version", "2024-11-05")
 
 	// 6. Setup Gateway HTTP router
@@ -81,7 +129,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
-		Handler:      mux,
+		Handler:      middleware.AuthMiddleware(verifier, policyEngine)(mux),
 		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
 		IdleTimeout:  cfg.Server.IdleTimeout,

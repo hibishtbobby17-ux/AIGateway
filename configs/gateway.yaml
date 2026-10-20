@@ -13,6 +13,7 @@ admin:
 
 security:
   jwt_issuer: "https://gateway.local"
+  jwt_audience: "gateway-api"
   allow_local_egress: true # Enabled strictly for local development
   encryption_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 

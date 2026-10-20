@@ -19,6 +19,13 @@ func NewSQLRevocationStore(db *sql.DB) (*SQLRevocationStore, error) {
 	return &SQLRevocationStore{db: db}, nil
 }
 
+func (s *SQLRevocationStore) Validate(ctx context.Context) error {
+	if _, err := s.db.ExecContext(ctx, "SELECT token_id_hash, expires_at FROM token_revocations WHERE 1 = 0"); err != nil {
+		return fmt.Errorf("validate token revocation schema: %w", err)
+	}
+	return nil
+}
+
 func (s *SQLRevocationStore) Revoke(ctx context.Context, tokenID string, expiresAt time.Time) error {
 	if tokenID == "" {
 		return errors.New("token id is required for revocation")

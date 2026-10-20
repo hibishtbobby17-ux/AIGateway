@@ -242,7 +242,8 @@ Tasks
 - [x] Implement strict ES256 token claim/time/issuer/audience validation and durable SQL revocation checked on every verification; Fosite revocation invalidates stored sessions and persists hashed JTIs, failing closed when revocation storage is unavailable.
 - [x] Implement RBAC and extensible ABAC authorization with tenant-scoped rules, role matching, action scopes, required-scope constraints, and trusted claim attributes.
 - [x] Enforce discovery-time and invocation-time authorization for MCP tools, resources, and prompts when the policy engine is attached; invocation is independently checked and missing/mismatched verified principals are denied.
-- [ ] Wire authentication and persisted policy loading into the gateway runtime; the current runtime does not attach an auth verifier or policy engine.
+- [x] Persist tenant-scoped role and required-scope policy attributes, and validate/decode persisted rules strictly into the policy engine.
+- [x] Wire strict bearer-token authentication, shared SQL signing keys, durable revocation checks, and SQL-loaded policies into the gateway runtime. Startup fails when required keys, revocation schema, or policies cannot initialize; OAuth routes remain unmounted.
 - [ ] Implement downstream credential selection and delegated authentication.
 - [ ] Add administrative authorization and audit events.
 - [x] Add focused tests for Fosite PKCE S256, durable code redemption across provider recreation, confidential and public client constraints, scope boundaries, secret hashing, JWT verification, and migrations.
@@ -410,13 +411,13 @@ Maintain this checklist at the end of every coding session:
 | Field | Current Status |
 | :--- | :--- |
 | **Current milestone** | Milestone 3: Identity and authorization (in progress) |
-| **Completed tasks** | Milestones 0-2 as recorded above. Milestone 3 includes the Fosite provider component with authorization-code/PKCE, client-credentials, and revocation endpoints; SQL-backed clients/grant state/explicit user consent/revocations; verified bearer-token principals; tenant-aware consent; strict ES256 validation; encrypted shared signing keys; and RBAC/ABAC enforcement in MCP discovery/invocation paths when a policy engine is attached. |
-| **In progress** | External OIDC flows, interactive login/consent UX, production secret-manager integration, and gateway runtime wiring for authentication and persisted policies. |
-| **Blocked** | OAuth provider remains unmounted because interactive login and user-facing consent approval are not implemented, and production signing-key secret provisioning is not integrated. The gateway executable also does not yet attach authentication middleware or a policy engine; component-level policy enforcement is tested but not active in the runtime. |
-| **Tests executed** | `go test ./...`, `go vet ./...`, focused token/OAuth/middleware/policy/MCP transport/storage tests, and `git diff --check` pass. Race tests are unavailable because the local Go toolchain requires CGO for race builds and CGO is disabled. |
-| **Known defects** | OAuth provider endpoints and gateway authentication/policy engine are not wired into runtime. Interactive login/consent UX, production key-encryption secret provisioning, old-key retirement policy, external OIDC discovery, and persisted policy loading remain incomplete. Resource servers require shared SQL availability for revocation checks. |
+| **Completed tasks** | Milestones 0-2 as recorded above. Milestone 3 includes the Fosite provider component with authorization-code/PKCE, client-credentials, and revocation endpoints; SQL-backed clients/grant state/explicit user consent/revocations; verified bearer-token principals; tenant-aware consent; strict ES256 validation; encrypted shared signing keys; and strict SQL-loaded RBAC/ABAC policy enforcement active in the gateway runtime. |
+| **In progress** | External OIDC flows, interactive login/consent UX, production secret-manager integration, downstream credential selection, administrative authorization/audit, and broader OAuth security testing. |
+| **Blocked** | OAuth provider remains unmounted because interactive login and user-facing consent approval are not implemented, and production signing-key secret provisioning is not integrated. MCP requests now require a valid bearer token and matching persisted allow policy; no user-facing token acquisition flow exists yet. |
+| **Tests executed** | `go test ./...`, `go vet ./...`, and `git diff --check` passed after runtime wiring, including focused config, policy, storage, token, and gateway checks. Race tests remain unavailable because the local Go toolchain requires CGO for race builds and CGO is disabled. |
+| **Known defects** | Interactive login/consent UX, production key-encryption secret provisioning, old-key retirement policy, external OIDC discovery, delegated downstream credentials, administrative authorization/audit, and broader security tests remain incomplete. Resource servers require shared SQL availability for revocation checks. |
 | **Architectural decisions** | ADR-0001 through ADR-0009 active. Pinned MCP version 2024-11-05. |
-| **Next task** | Wire strict authentication and durable policy loading into the gateway runtime; keep OAuth routes gated until interactive login/consent and production secret provisioning exist. |
+| **Next task** | Continue Milestone 3 with administrative authorization/audit and downstream credential boundaries; keep OAuth routes gated until interactive login/consent and production secret provisioning exist. |
 
 15. First action
 

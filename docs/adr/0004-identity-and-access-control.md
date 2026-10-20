@@ -40,4 +40,4 @@ Enterprise AI deployments span internal employees, third-party developers, autom
 
 ### Negative
 - Token exchange and ABAC evaluation add a small latency overhead (mitigated by in-memory key and policy caching).
-- The current gateway executable does not yet configure authentication middleware or load persisted policy records. These component-level enforcement paths are not active in the runtime until the remaining wiring and policy repository work is completed.
+- The gateway executable now requires verified bearer tokens and loads tenant-scoped policies from SQL at startup. Missing or malformed signing-key, revocation, or policy state fails startup; a tenant with no matching allow policy is denied. OAuth provider routes remain unmounted until interactive login/consent and production secret provisioning are ready.

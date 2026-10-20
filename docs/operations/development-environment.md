@@ -47,6 +47,7 @@ GATEWAY_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef012345678
 # Required only when enabling persistent OAuth signing keys. Keep out of config files and share securely across replicas.
 GATEWAY_SIGNING_KEY_ENCRYPTION_KEY=<64-character-hex-secret-from-a-secret-manager>
 GATEWAY_JWT_ISSUER=https://gateway.local
+GATEWAY_JWT_AUDIENCE=gateway-api
 GATEWAY_ALLOW_LOCAL_EGRESS=true # Only in local development
 
 # Primary Database
@@ -106,8 +107,17 @@ The following workflow runs the current Go gateway against the local PostgreSQL 
 4. Start the gateway in a separate terminal using the same database environment variables:
 
    ```powershell
+   $bytes = New-Object byte[] 32
+   [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+   $env:GATEWAY_SIGNING_KEY_ENCRYPTION_KEY = [Convert]::ToHexString($bytes).ToLowerInvariant()
+   $env:GATEWAY_JWT_ISSUER = "https://gateway.local"
+   $env:GATEWAY_JWT_AUDIENCE = "gateway-api"
    go run ./cmd/gateway
    ```
+
+   Use the same stable `GATEWAY_SIGNING_KEY_ENCRYPTION_KEY` on every restart and replica. The example above is for a disposable local database; reusing the same generated value is required to read keys already persisted in SQL. Do not generate a new value on every restart.
+
+   The gateway now validates bearer tokens and loads persisted tenant policies at startup. With no policy rows, MCP operations are denied by default. The OAuth provider is not mounted yet, so the current repository does not expose a supported runtime flow for obtaining gateway tokens.
 
 5. In another terminal, verify the gateway is serving its health and root endpoints:
 

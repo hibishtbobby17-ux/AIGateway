@@ -242,6 +242,28 @@ func TestVerifierFailsClosedWhenRevocationStoreFails(t *testing.T) {
 	}
 }
 
+func TestSQLRevocationStoreValidatesSchema(t *testing.T) {
+	ctx := context.Background()
+	db, err := storage.OpenDB(&config.DatabaseConfig{Driver: "sqlite", URL: ":memory:", MaxConns: 1})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	defer db.Close()
+	store, err := NewSQLRevocationStore(db)
+	if err != nil {
+		t.Fatalf("create SQL revocation store: %v", err)
+	}
+	if err := store.Validate(ctx); err == nil {
+		t.Fatal("Validate() succeeded without the revocation schema")
+	}
+	if err := migrations.MigrateUp(ctx, db); err != nil {
+		t.Fatalf("apply migrations: %v", err)
+	}
+	if err := store.Validate(ctx); err != nil {
+		t.Fatalf("Validate() failed with the revocation schema: %v", err)
+	}
+}
+
 func TestVerifierRequiresRevocationStore(t *testing.T) {
 	km, err := keys.NewManager()
 	if err != nil {

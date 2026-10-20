@@ -50,6 +50,7 @@ type SecurityConfig struct {
 	EncryptionKey              string   `json:"encryption_key" yaml:"encryption_key"` // 32-byte hex for AES-256
 	SigningKeyEncryptionKeyHex string   `json:"-" yaml:"-"`                           // 32-byte hex supplied out of band
 	JWTIssuer                  string   `json:"jwt_issuer" yaml:"jwt_issuer"`
+	JWTAudience                string   `json:"jwt_audience" yaml:"jwt_audience"`
 	AllowLocalEgress           bool     `json:"allow_local_egress" yaml:"allow_local_egress"` // Prohibited in production
 	EgressAllowedCIDRs         []string `json:"egress_allowed_cidrs" yaml:"egress_allowed_cidrs"`
 }
@@ -95,6 +96,7 @@ func NewDefaultConfig() *Config {
 		},
 		Security: SecurityConfig{
 			JWTIssuer:        "https://gateway.local",
+			JWTAudience:      "gateway-api",
 			AllowLocalEgress: false,
 		},
 		Database: DatabaseConfig{
@@ -148,6 +150,9 @@ func (c *Config) LoadFromEnv() {
 	if v := os.Getenv("GATEWAY_JWT_ISSUER"); v != "" {
 		c.Security.JWTIssuer = v
 	}
+	if v := os.Getenv("GATEWAY_JWT_AUDIENCE"); v != "" {
+		c.Security.JWTAudience = v
+	}
 	if v := os.Getenv("GATEWAY_ALLOW_LOCAL_EGRESS"); v != "" {
 		c.Security.AllowLocalEgress = strings.ToLower(v) == "true" || v == "1"
 	}
@@ -191,8 +196,8 @@ func (c *Config) Validate() error {
 		errs = append(errs, fmt.Sprintf("unsupported database driver: %q (must be 'postgres' or 'sqlite')", c.Database.Driver))
 	}
 
-	if c.Security.JWTIssuer == "" {
-		errs = append(errs, "jwt_issuer cannot be empty")
+	if c.Security.JWTIssuer == "" || c.Security.JWTAudience == "" {
+		errs = append(errs, "jwt_issuer and jwt_audience cannot be empty")
 	}
 	if c.Security.SigningKeyEncryptionKeyHex != "" {
 		if _, err := c.SigningKeyEncryptionKey(); err != nil {

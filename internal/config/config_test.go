@@ -52,11 +52,13 @@ func TestConfigLoadFromEnv(t *testing.T) {
 	os.Setenv("GATEWAY_SERVER_PORT", "9090")
 	os.Setenv("GATEWAY_ADMIN_PORT", "9091")
 	os.Setenv("GATEWAY_JWT_ISSUER", "https://auth.enterprise.com")
+	os.Setenv("GATEWAY_JWT_AUDIENCE", "mcp-api")
 	os.Setenv("GATEWAY_SIGNING_KEY_ENCRYPTION_KEY", strings.Repeat("ab", 32))
 	defer func() {
 		os.Unsetenv("GATEWAY_SERVER_PORT")
 		os.Unsetenv("GATEWAY_ADMIN_PORT")
 		os.Unsetenv("GATEWAY_JWT_ISSUER")
+		os.Unsetenv("GATEWAY_JWT_AUDIENCE")
 		os.Unsetenv("GATEWAY_SIGNING_KEY_ENCRYPTION_KEY")
 	}()
 
@@ -71,6 +73,9 @@ func TestConfigLoadFromEnv(t *testing.T) {
 	}
 	if cfg.Security.JWTIssuer != "https://auth.enterprise.com" {
 		t.Errorf("expected JWTIssuer to be updated, got: %s", cfg.Security.JWTIssuer)
+	}
+	if cfg.Security.JWTAudience != "mcp-api" {
+		t.Errorf("expected JWTAudience to be updated, got: %s", cfg.Security.JWTAudience)
 	}
 	signingKey, err := cfg.SigningKeyEncryptionKey()
 	if err != nil {
