@@ -22,6 +22,8 @@ const (
 	ActionTokenRevoke    = "oauth.token.revoke"
 	ActionAccessDenied   = "security.access_denied"
 	ActionTenantCreate   = "admin.tenant.create"
+	ActionA2ATaskSubmit  = "a2a.task.submit"
+	ActionA2ATaskCancel  = "a2a.task.cancel"
 )
 
 // Event represents an immutable security or administrative audit log entry.

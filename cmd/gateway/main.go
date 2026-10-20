@@ -13,6 +13,12 @@ import (
 	"project_alpha/internal/api/health"
 	"project_alpha/internal/api/middleware"
 	"project_alpha/internal/config"
+	a2aregistry "project_alpha/internal/a2a/registry"
+	"project_alpha/internal/a2a/routing"
+	"project_alpha/internal/a2a/tasks"
+	a2atransport "project_alpha/internal/a2a/transport"
+	"project_alpha/internal/audit"
+	"project_alpha/internal/identity/delegation"
 	"project_alpha/internal/identity/idp"
 	"project_alpha/internal/identity/keys"
 	"project_alpha/internal/identity/oauth"
@@ -108,7 +114,23 @@ func main() {
 	mcpHandler.SetPolicyEngine(policyEngine)
 	logger.Info("MCP Gateway engine initialized", "protocol_version", "2024-11-05")
 
-	// 6. Initialize OAuth 2.0 & Built-in Identity Provider
+	// 6. Initialize A2A Gateway Core & Delegation Provider
+	auditRecorder := audit.NewSQLRecorder(db)
+	tokenExchanger, _ := delegation.NewTokenExchanger(keyManager, cfg.Security.JWTIssuer, 5*time.Minute)
+	credentialProvider := delegation.NewProvider(tokenExchanger)
+	a2aRegistry := a2aregistry.NewSQLRegistry(db)
+	a2aStore := tasks.NewSQLStore(db)
+	a2aRouter := routing.NewRouter(routing.RouterConfig{
+		Registry:           a2aRegistry,
+		Store:              a2aStore,
+		CredentialProvider: credentialProvider,
+		AllowLocalEgress:   cfg.Environment != config.EnvProduction,
+	})
+	defer a2aRouter.Close()
+	a2aHandler := a2atransport.NewHandler(a2aRegistry, a2aStore, a2aRouter, policyEngine, auditRecorder, "default")
+	logger.Info("A2A Gateway engine initialized", "protocol_version", "a2a/v1")
+
+	// 7. Initialize OAuth 2.0 & Built-in Identity Provider
 	oauthStore, err := oauth.NewSQLStore(db, nil)
 	if err != nil {
 		logger.Error("oauth store initialization failed", "error", err)
@@ -136,7 +158,7 @@ func main() {
 	}
 	oauthServer.SetAuthorizationService(interactiveIdP)
 
-	// 7. Setup Gateway HTTP router
+	// 8. Setup Gateway HTTP router
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthHandler.LivenessHandler)
 	mux.HandleFunc("/readyz", healthHandler.ReadinessHandler)
@@ -151,12 +173,15 @@ func main() {
 	mux.HandleFunc("/mcp/v1/sse", mcpHandler.HandleSSE)
 	mux.HandleFunc("/mcp/v1/messages", mcpHandler.HandleMessages)
 
+	// A2A Gateway logical protocol endpoints
+	a2aHandler.Mount(mux)
+
 	// Logical endpoint root
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"platform":"AI Gateway & Observability Platform","status":"online","mcp_endpoint":"/mcp/v1/sse"}`))
+			_, _ = w.Write([]byte(`{"platform":"AI Gateway & Observability Platform","status":"online","mcp_endpoint":"/mcp/v1/sse","a2a_endpoint":"/a2a/v1/agents"}`))
 			return
 		}
 		http.NotFound(w, r)

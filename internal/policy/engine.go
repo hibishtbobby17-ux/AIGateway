@@ -160,6 +160,10 @@ func scopeAllowsAction(scopes []string, action string) bool {
 		required = []string{"mcp:resources:read", "mcp:read"}
 	case ActionMCPPromptsRead:
 		required = []string{"mcp:prompts:read", "mcp:read"}
+	case ActionA2AAgentsDiscover:
+		required = []string{"a2a:agents:discover", "a2a:read", "*"}
+	case ActionA2ATasksSubmit:
+		required = []string{"a2a:tasks:submit", "a2a:write", "*"}
 	default:
 		return true
 	}

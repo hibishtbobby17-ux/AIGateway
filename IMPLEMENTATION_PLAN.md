@@ -267,25 +267,25 @@ Document any built-in IdP functionality that remains unsuitable for production.
 
 8. Milestone 4: A2A Gateway
 Tasks
-Select and document the supported A2A protocol version.
-Implement agent registration and discovery.
-Support Agent Card retrieval and validation.
-Implement authenticated routing.
-Implement task submission and lifecycle handling.
-Support required status updates and streaming.
-Add deadlines, concurrency limits, and bounded retries.
-Add circuit breakers and upstream health checks.
-Define durable task-state behavior.
-Add tenant and policy enforcement.
-Propagate trace context.
-Add task audit records and integration tests.
+- [x] Select and document the supported A2A protocol version (`a2a/v1` per ADR-0003).
+- [x] Implement agent registration and discovery (`internal/a2a/registry/registry.go`).
+- [x] Support Agent Card retrieval and validation (`internal/a2a/protocol/protocol.go` & `internal/a2a/registry`).
+- [x] Implement authenticated routing (`internal/a2a/routing/router.go` and `internal/a2a/routing/client.go`).
+- [x] Implement task submission and lifecycle handling (`internal/a2a/tasks/store.go` and `internal/a2a/transport/handler.go`).
+- [x] Support required status updates and streaming (Server-Sent Events `/a2a/v1/tasks/{id}/events` with historical replay).
+- [x] Add deadlines, concurrency limits, and bounded retries (`resilience.Bulkhead`, `HTTPAgentClient` retries).
+- [x] Add circuit breakers and upstream health checks (`resilience.CircuitBreaker`, ping endpoints).
+- [x] Define durable task-state behavior (`a2a_tasks` and `a2a_task_events` tables in SQL).
+- [x] Add tenant and policy enforcement (`a2a:agents:discover`, `a2a:tasks:submit`, strict tenant isolation).
+- [x] Propagate trace context (W3C `traceparent` injection onto upstream requests).
+- [x] Add task audit records and integration tests (`internal/audit`, `tests/integration/a2a_gateway_test.go`).
 Acceptance criteria
-Agents can be registered and routed through the gateway.
-Unauthorized agent access is denied.
-Task status follows the selected protocol.
-Failures and timeouts are represented consistently.
-Task state follows the documented persistence model.
-Tests cover disconnects, duplicate requests, and upstream failures.
+- [x] Agents can be registered and routed through the gateway.
+- [x] Unauthorized agent access is denied.
+- [x] Task status follows the selected protocol.
+- [x] Failures and timeouts are represented consistently.
+- [x] Task state follows the documented persistence model.
+- [x] Tests cover disconnects, duplicate requests, and upstream failures.
 9. Milestone 5: Observability pipeline
 Tasks
 Integrate OpenTelemetry instrumentation in the gateway.
@@ -410,14 +410,14 @@ Maintain this checklist at the end of every coding session:
 
 | Field | Current Status |
 | :--- | :--- |
-| **Current milestone** | Milestone 3: Identity and authorization (complete); preparing Milestone 4: A2A Gateway |
-| **Completed tasks** | Milestones 0, 1, 2, and 3 are complete and verified. Milestone 3 implements the full identity, authentication, and authorization stack: ORY Fosite OAuth 2.1 authorization server with authorization-code/PKCE S256, client-credentials, token revocation, JWKS, and interactive user login and consent flows; built-in IdP user store with bcrypt and role assignment; external OIDC discovery with SSRF protection and claim mapping; downstream credential selection with RFC 8693 delegated token exchange and strict anti-relay protection; tenant-isolated SQL audit logs; administrative role-based access control and management endpoints; encrypted shared signing-key management; durable SQL revocation; strict ES256 claim validation; and comprehensive security tests covering tenant isolation, header spoofing, PKCE, code replay, and client authentication. |
-| **In progress** | Milestone 4: A2A Gateway. |
+| **Current milestone** | Milestone 4: A2A Gateway (complete); preparing Milestone 5: Observability pipeline |
+| **Completed tasks** | Milestones 0, 1, 2, 3, and 4 are complete and verified. Milestone 4 implements the full Agent-to-Agent (A2A) Gateway stack: pinned `a2a/v1` protocol specification; Agent Card JSON validation and discovery; SQL and in-memory multi-tenant agent registry (`internal/a2a/registry`); durable task state machine and historical task events with SSE pub/sub streaming (`internal/a2a/tasks`); resilient upstream agent client with SSRF protection, circuit breakers, concurrency bulkheads, token anti-relay, and W3C `traceparent` injection (`internal/a2a/routing`); A2A router coordinating task dispatch, deadlines, and state transitions; A2A HTTP transport handler mounted into `cmd/gateway/main.go` supporting synchronous and asynchronous task submissions (`POST /a2a/v1/tasks`), idempotent re-executions, task details, cancellation, SSE event streaming, policy enforcement (`a2a:agents:discover`, `a2a:tasks:submit`), and security audit trails; and comprehensive unit and end-to-end integration tests. |
+| **In progress** | None (Milestone 4 complete). |
 | **Blocked** | None. |
-| **Tests executed** | `go test ./...`, `go vet ./...`, and `git diff --check` passed across all packages with 0 errors, including new audit, delegation, idp, oidc, admin, and security tests. |
+| **Tests executed** | `go test ./...` and `go vet ./...` passed across all packages with 0 errors, including all new A2A registry, routing, task store, transport, and end-to-end integration tests. |
 | **Known defects** | Production key-encryption secret provisioning via cloud secret managers and automated old-key retirement policy are documented for future milestones. Resource servers require shared SQL availability for revocation checks. |
-| **Architectural decisions** | ADR-0001 through ADR-0009 active. Pinned MCP version 2024-11-05. |
-| **Next task** | Begin Milestone 4: A2A Gateway (agent registration, Agent Card discovery, authenticated routing, task lifecycle management, streaming, and resilience). |
+| **Architectural decisions** | ADR-0001 through ADR-0009 active. Pinned MCP version 2024-11-05. Pinned A2A protocol version `a2a/v1`. |
+| **Next task** | Begin Milestone 5: Observability pipeline (OpenTelemetry tracing, metrics, OTLP ingestion, span attributes, and log correlation). |
 
 15. First action
 
