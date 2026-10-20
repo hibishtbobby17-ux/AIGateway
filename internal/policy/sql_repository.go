@@ -77,3 +77,107 @@ func decodePolicyField(ruleID, field, encoded string, target any) error {
 	}
 	return nil
 }
+
+// CreateRule inserts a new policy rule for a tenant.
+func (r *SQLRepository) CreateRule(ctx context.Context, rule *Rule) error {
+	if rule == nil {
+		return errors.New("policy rule cannot be nil")
+	}
+	if rule.ID == "" || rule.TenantID == "" || rule.Name == "" {
+		return errors.New("rule id, tenant_id, and name are required")
+	}
+	if rule.Effect != EffectAllow && rule.Effect != EffectDeny {
+		return fmt.Errorf("invalid policy effect %q", rule.Effect)
+	}
+
+	actionsJSON, err := json.Marshal(rule.Actions)
+	if err != nil {
+		return fmt.Errorf("encode actions: %w", err)
+	}
+	resourcesJSON, err := json.Marshal(rule.Resources)
+	if err != nil {
+		return fmt.Errorf("encode resources: %w", err)
+	}
+	rolesJSON, err := json.Marshal(rule.Roles)
+	if err != nil {
+		return fmt.Errorf("encode roles: %w", err)
+	}
+	scopesJSON, err := json.Marshal(rule.RequiredScopes)
+	if err != nil {
+		return fmt.Errorf("encode required_scopes: %w", err)
+	}
+	var conditionsJSON sql.NullString
+	if rule.Conditions != nil {
+		bytes, err := json.Marshal(rule.Conditions)
+		if err != nil {
+			return fmt.Errorf("encode conditions: %w", err)
+		}
+		conditionsJSON = sql.NullString{String: string(bytes), Valid: true}
+	}
+
+	query := `
+	INSERT INTO policies (id, tenant_id, name, effect, actions, resources, roles, required_scopes, conditions)
+	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
+
+	_, err = r.db.ExecContext(ctx, query,
+		rule.ID, rule.TenantID, rule.Name, string(rule.Effect),
+		string(actionsJSON), string(resourcesJSON), string(rolesJSON), string(scopesJSON),
+		conditionsJSON,
+	)
+	if err != nil {
+		return fmt.Errorf("insert policy rule: %w", err)
+	}
+	return nil
+}
+
+// ListRules retrieves all policy rules for a specific tenant.
+func (r *SQLRepository) ListRules(ctx context.Context, tenantID string) ([]*Rule, error) {
+	if tenantID == "" {
+		return nil, errors.New("tenant_id is required to list policies")
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, tenant_id, name, effect, actions, resources, roles, required_scopes, conditions
+		FROM policies
+		WHERE tenant_id = $1
+		ORDER BY id`, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("query policies for tenant %s: %w", tenantID, err)
+	}
+	defer rows.Close()
+
+	var rules []*Rule
+	for rows.Next() {
+		var (
+			rule                       Rule
+			effect, actions, resources string
+			roles, requiredScopes      string
+			conditions                 sql.NullString
+		)
+		if err := rows.Scan(
+			&rule.ID, &rule.TenantID, &rule.Name, &effect, &actions, &resources,
+			&roles, &requiredScopes, &conditions,
+		); err != nil {
+			return nil, fmt.Errorf("scan policy: %w", err)
+		}
+		rule.Effect = Effect(effect)
+		if err := decodePolicyField(rule.ID, "actions", actions, &rule.Actions); err != nil {
+			return nil, err
+		}
+		if err := decodePolicyField(rule.ID, "resources", resources, &rule.Resources); err != nil {
+			return nil, err
+		}
+		if err := decodePolicyField(rule.ID, "roles", roles, &rule.Roles); err != nil {
+			return nil, err
+		}
+		if err := decodePolicyField(rule.ID, "required_scopes", requiredScopes, &rule.RequiredScopes); err != nil {
+			return nil, err
+		}
+		if conditions.Valid && conditions.String != "" {
+			if err := decodePolicyField(rule.ID, "conditions", conditions.String, &rule.Conditions); err != nil {
+				return nil, err
+			}
+		}
+		rules = append(rules, &rule)
+	}
+	return rules, rows.Err()
+}

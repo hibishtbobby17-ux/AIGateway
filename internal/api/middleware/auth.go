@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"project_alpha/internal/identity/delegation"
 	"project_alpha/internal/identity/principal"
 	"project_alpha/internal/identity/tokens"
 	"project_alpha/internal/observability/correlation"
@@ -94,6 +95,7 @@ func AuthMiddleware(verifier *tokens.Verifier, engine *policy.Engine) func(http.
 
 			// Populate request context with authenticated caller claims
 			ctx := r.Context()
+			ctx = delegation.WithInboundToken(ctx, tokenStr)
 			ctx = context.WithValue(ctx, correlation.TenantIDKey, claims.TenantID)
 			ctx = context.WithValue(ctx, SubjectKey, claims.Subject)
 			ctx = context.WithValue(ctx, RolesKey, claims.Roles)
@@ -129,7 +131,7 @@ func isPublicEndpoint(p string) bool {
 	if strings.HasPrefix(p, "/.well-known/") {
 		return true
 	}
-	if p == "/oauth/token" || p == "/oauth/revoke" {
+	if p == "/oauth/token" || p == "/oauth/revoke" || p == "/login" {
 		return true
 	}
 	return false

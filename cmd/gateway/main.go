@@ -13,7 +13,9 @@ import (
 	"project_alpha/internal/api/health"
 	"project_alpha/internal/api/middleware"
 	"project_alpha/internal/config"
+	"project_alpha/internal/identity/idp"
 	"project_alpha/internal/identity/keys"
+	"project_alpha/internal/identity/oauth"
 	"project_alpha/internal/identity/tokens"
 	"project_alpha/internal/mcp/aggregation"
 	"project_alpha/internal/mcp/registry"
@@ -106,11 +108,44 @@ func main() {
 	mcpHandler.SetPolicyEngine(policyEngine)
 	logger.Info("MCP Gateway engine initialized", "protocol_version", "2024-11-05")
 
-	// 6. Setup Gateway HTTP router
+	// 6. Initialize OAuth 2.0 & Built-in Identity Provider
+	oauthStore, err := oauth.NewSQLStore(db, nil)
+	if err != nil {
+		logger.Error("oauth store initialization failed", "error", err)
+		os.Exit(1)
+	}
+	oauthServer, err := oauth.NewFositeServer(oauthStore, keyManager, cfg.Security.JWTIssuer, cfg.Security.JWTAudience, signingKeyEncryptionKey)
+	if err != nil {
+		logger.Error("oauth server initialization failed", "error", err)
+		os.Exit(1)
+	}
+	userRepo, err := idp.NewSQLUserRepository(db, 10)
+	if err != nil {
+		logger.Error("idp user repository initialization failed", "error", err)
+		os.Exit(1)
+	}
+	consentRepo, err := oauth.NewSQLAuthorizationService(db)
+	if err != nil {
+		logger.Error("oauth consent repository initialization failed", "error", err)
+		os.Exit(1)
+	}
+	interactiveIdP, err := idp.NewInteractiveService(userRepo, consentRepo, signingKeyEncryptionKey)
+	if err != nil {
+		logger.Error("idp interactive service initialization failed", "error", err)
+		os.Exit(1)
+	}
+	oauthServer.SetAuthorizationService(interactiveIdP)
+
+	// 7. Setup Gateway HTTP router
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthHandler.LivenessHandler)
 	mux.HandleFunc("/readyz", healthHandler.ReadinessHandler)
 	mux.HandleFunc("/startupz", healthHandler.StartupHandler)
+
+	// Mount OAuth and IdP endpoints
+	oauthServer.Mount(mux)
+	mux.HandleFunc("/login", interactiveIdP.HandleLogin)
+	mux.HandleFunc("/consent", interactiveIdP.HandleConsent)
 
 	// MCP Gateway logical protocol endpoints
 	mux.HandleFunc("/mcp/v1/sse", mcpHandler.HandleSSE)

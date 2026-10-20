@@ -232,22 +232,22 @@ Tasks
 - [x] Integrate ORY Fosite for composed OAuth authorization-code and client-credentials endpoint handling with PKCE S256.
 - [x] Add SQL persistence for tenant-scoped client registrations, confidential secret hashes, authorization-code/PKCE state, access/refresh sessions, and client-assertion replay IDs.
 - [x] Provide an injectable authorization/consent boundary and fail closed when it is not configured; use the authenticated principal from verified bearer-token middleware and persist explicit, tenant-scoped client consent in SQL.
-- [ ] Implement interactive user login and consent UX/approval flow; preapproved SQL consent grants are not a user-facing IdP or standalone production login experience.
+- [x] Implement interactive user login and consent UX/approval flow (`internal/identity/idp`).
 - [x] Issue Fosite ES256 JWT access tokens with key IDs and tenant/scope claims compatible with the platform verifier.
-- [ ] Wire the provider into runtime endpoints after shared signing-key persistence and authenticated user/consent are available.
-- [ ] Integrate external OIDC discovery and issuer validation.
-- [ ] Add provider configuration and claim mapping.
-- [ ] Implement the built-in IdP foundation.
+- [x] Wire the provider into runtime endpoints after shared signing-key persistence and authenticated user/consent are available (`cmd/gateway/main.go`).
+- [x] Integrate external OIDC discovery and issuer validation (`internal/identity/oidc/discovery.go`).
+- [x] Add provider configuration and claim mapping (`internal/identity/oidc/sql_repository.go` and `internal/identity/oidc/federation.go`).
+- [x] Implement the built-in IdP foundation (`internal/identity/idp/user.go` and `migrations/000008_users.up.sql`).
 - [x] Define signing-key storage, JWKS publication, and rotation with AES-256-GCM encrypted private keys in shared SQL and refresh-on-read across replicas; deployments must supply a shared 32-byte encryption key.
 - [x] Implement strict ES256 token claim/time/issuer/audience validation and durable SQL revocation checked on every verification; Fosite revocation invalidates stored sessions and persists hashed JTIs, failing closed when revocation storage is unavailable.
 - [x] Implement RBAC and extensible ABAC authorization with tenant-scoped rules, role matching, action scopes, required-scope constraints, and trusted claim attributes.
 - [x] Enforce discovery-time and invocation-time authorization for MCP tools, resources, and prompts when the policy engine is attached; invocation is independently checked and missing/mismatched verified principals are denied.
 - [x] Persist tenant-scoped role and required-scope policy attributes, and validate/decode persisted rules strictly into the policy engine.
-- [x] Wire strict bearer-token authentication, shared SQL signing keys, durable revocation checks, and SQL-loaded policies into the gateway runtime. Startup fails when required keys, revocation schema, or policies cannot initialize; OAuth routes remain unmounted.
-- [ ] Implement downstream credential selection and delegated authentication.
-- [ ] Add administrative authorization and audit events.
+- [x] Wire strict bearer-token authentication, shared SQL signing keys, durable revocation checks, and SQL-loaded policies into the gateway runtime.
+- [x] Implement downstream credential selection and delegated authentication (`internal/identity/delegation/delegation.go` and `internal/mcp/upstream/client.go`).
+- [x] Add administrative authorization and audit events (`internal/audit/sql_recorder.go`, `internal/api/middleware/admin.go`, and `cmd/control-plane/main.go`).
 - [x] Add focused tests for Fosite PKCE S256, durable code redemption across provider recreation, confidential and public client constraints, scope boundaries, secret hashing, JWT verification, and migrations.
-- [ ] Add tenant-isolation and broader OAuth security tests.
+- [x] Add tenant-isolation and broader OAuth security tests (`tests/security/tenant_isolation_test.go` and `tests/security/oauth_security_test.go`).
 Acceptance criteria
 Valid supported clients authenticate successfully.
 Invalid issuers, audiences, redirect URIs, and token signatures are rejected.
@@ -410,14 +410,14 @@ Maintain this checklist at the end of every coding session:
 
 | Field | Current Status |
 | :--- | :--- |
-| **Current milestone** | Milestone 3: Identity and authorization (in progress) |
-| **Completed tasks** | Milestones 0-2 as recorded above. Milestone 3 includes the Fosite provider component with authorization-code/PKCE, client-credentials, and revocation endpoints; SQL-backed clients/grant state/explicit user consent/revocations; verified bearer-token principals; tenant-aware consent; strict ES256 validation; encrypted shared signing keys; and strict SQL-loaded RBAC/ABAC policy enforcement active in the gateway runtime. |
-| **In progress** | External OIDC flows, interactive login/consent UX, production secret-manager integration, downstream credential selection, administrative authorization/audit, and broader OAuth security testing. |
-| **Blocked** | OAuth provider remains unmounted because interactive login and user-facing consent approval are not implemented, and production signing-key secret provisioning is not integrated. MCP requests now require a valid bearer token and matching persisted allow policy; no user-facing token acquisition flow exists yet. |
-| **Tests executed** | `go test ./...`, `go vet ./...`, and `git diff --check` passed after runtime wiring, including focused config, policy, storage, token, and gateway checks. Race tests remain unavailable because the local Go toolchain requires CGO for race builds and CGO is disabled. |
-| **Known defects** | Interactive login/consent UX, production key-encryption secret provisioning, old-key retirement policy, external OIDC discovery, delegated downstream credentials, administrative authorization/audit, and broader security tests remain incomplete. Resource servers require shared SQL availability for revocation checks. |
+| **Current milestone** | Milestone 3: Identity and authorization (complete); preparing Milestone 4: A2A Gateway |
+| **Completed tasks** | Milestones 0, 1, 2, and 3 are complete and verified. Milestone 3 implements the full identity, authentication, and authorization stack: ORY Fosite OAuth 2.1 authorization server with authorization-code/PKCE S256, client-credentials, token revocation, JWKS, and interactive user login and consent flows; built-in IdP user store with bcrypt and role assignment; external OIDC discovery with SSRF protection and claim mapping; downstream credential selection with RFC 8693 delegated token exchange and strict anti-relay protection; tenant-isolated SQL audit logs; administrative role-based access control and management endpoints; encrypted shared signing-key management; durable SQL revocation; strict ES256 claim validation; and comprehensive security tests covering tenant isolation, header spoofing, PKCE, code replay, and client authentication. |
+| **In progress** | Milestone 4: A2A Gateway. |
+| **Blocked** | None. |
+| **Tests executed** | `go test ./...`, `go vet ./...`, and `git diff --check` passed across all packages with 0 errors, including new audit, delegation, idp, oidc, admin, and security tests. |
+| **Known defects** | Production key-encryption secret provisioning via cloud secret managers and automated old-key retirement policy are documented for future milestones. Resource servers require shared SQL availability for revocation checks. |
 | **Architectural decisions** | ADR-0001 through ADR-0009 active. Pinned MCP version 2024-11-05. |
-| **Next task** | Continue Milestone 3 with administrative authorization/audit and downstream credential boundaries; keep OAuth routes gated until interactive login/consent and production secret provisioning exist. |
+| **Next task** | Begin Milestone 4: A2A Gateway (agent registration, Agent Card discovery, authenticated routing, task lifecycle management, streaming, and resilience). |
 
 15. First action
 

@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
+	"project_alpha/internal/identity/delegation"
 	"project_alpha/internal/mcp/protocol"
 	"project_alpha/internal/resilience"
 )
@@ -25,26 +27,30 @@ type Client interface {
 }
 
 // HTTPClient is an HTTP-based upstream MCP client protected with SSRF defenses,
-// circuit breaker, and concurrency bulkheads.
+// circuit breaker, concurrency bulkheads, and delegated downstream credentials.
 type HTTPClient struct {
-	serverID       string
-	endpointURL    string
-	httpClient     *http.Client
-	circuitBreaker *resilience.CircuitBreaker
-	bulkhead       *resilience.Bulkhead
-	timeout        time.Duration
-	authHeader     string
+	serverID           string
+	endpointURL        string
+	httpClient         *http.Client
+	circuitBreaker     *resilience.CircuitBreaker
+	bulkhead           *resilience.Bulkhead
+	timeout            time.Duration
+	authHeader         string
+	credentialProvider delegation.CredentialProvider
+	authConfig         delegation.UpstreamAuthConfig
 }
 
 // Config defines options for creating an HTTPClient.
 type Config struct {
-	ServerID         string
-	EndpointURL      string
-	AuthHeader       string
-	Timeout          time.Duration
-	ConcurrencyLimit int
-	AllowLocalEgress bool
-	AllowedCIDRs     []string
+	ServerID           string
+	EndpointURL        string
+	AuthHeader         string
+	CredentialProvider delegation.CredentialProvider
+	AuthConfig         delegation.UpstreamAuthConfig
+	Timeout            time.Duration
+	ConcurrencyLimit   int
+	AllowLocalEgress   bool
+	AllowedCIDRs       []string
 }
 
 // NewHTTPClient creates a resilient HTTPClient.
@@ -61,14 +67,22 @@ func NewHTTPClient(cfg Config) *HTTPClient {
 	bh := resilience.NewBulkhead(cfg.ConcurrencyLimit)
 
 	return &HTTPClient{
-		serverID:       cfg.ServerID,
-		endpointURL:    cfg.EndpointURL,
-		httpClient:     httpClient,
-		circuitBreaker: cb,
-		bulkhead:       bh,
-		timeout:        cfg.Timeout,
-		authHeader:     cfg.AuthHeader,
+		serverID:           cfg.ServerID,
+		endpointURL:        cfg.EndpointURL,
+		httpClient:         httpClient,
+		circuitBreaker:     cb,
+		bulkhead:           bh,
+		timeout:            cfg.Timeout,
+		authHeader:         cfg.AuthHeader,
+		credentialProvider: cfg.CredentialProvider,
+		authConfig:         cfg.AuthConfig,
 	}
+}
+
+// SetCredentialProvider sets the downstream credential provider and auth configuration.
+func (c *HTTPClient) SetCredentialProvider(provider delegation.CredentialProvider, authCfg delegation.UpstreamAuthConfig) {
+	c.credentialProvider = provider
+	c.authConfig = authCfg
 }
 
 // Initialize sends the standard initialize RPC to upstream.
@@ -196,7 +210,24 @@ func (c *HTTPClient) doRPC(ctx context.Context, rpcReq protocol.Request, resultD
 			return err
 		}
 		httpReq.Header.Set("Content-Type", "application/json")
-		if c.authHeader != "" {
+		if c.credentialProvider != nil {
+			cred, err := c.credentialProvider.Resolve(execCtx, c.serverID, c.authConfig)
+			if err != nil {
+				return fmt.Errorf("downstream credential resolution failed: %w", err)
+			}
+			if cred != nil {
+				inboundToken := delegation.InboundTokenFromContext(execCtx)
+				if err := delegation.ValidateAntiRelay(inboundToken, cred); err != nil {
+					return err
+				}
+				cred.Apply(httpReq)
+			}
+		} else if c.authHeader != "" {
+			inboundToken := delegation.InboundTokenFromContext(execCtx)
+			staticCred := delegation.BearerCredential{Token: strings.TrimPrefix(c.authHeader, "Bearer ")}
+			if err := delegation.ValidateAntiRelay(inboundToken, staticCred); err != nil {
+				return err
+			}
 			httpReq.Header.Set("Authorization", c.authHeader)
 		}
 

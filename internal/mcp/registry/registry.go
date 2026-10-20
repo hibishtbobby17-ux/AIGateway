@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"project_alpha/internal/identity/delegation"
 	"project_alpha/internal/mcp/upstream"
 )
 
@@ -24,7 +25,8 @@ type ServerRegistration struct {
 	NamespacePrefix  string          `json:"namespace_prefix"` // e.g. "github" -> "github::"
 	TransportType    string          `json:"transport_type"`   // "SSE", "HTTP_POST", "STDIO"
 	EndpointURL      string          `json:"endpoint_url"`
-	AuthHeader       string          `json:"auth_header,omitempty"`
+	AuthHeader       string                        `json:"auth_header,omitempty"`
+	AuthConfig       delegation.UpstreamAuthConfig `json:"auth_config,omitempty"`
 	TimeoutMs        int             `json:"timeout_ms"`
 	ConcurrencyLimit int             `json:"concurrency_limit"`
 	HealthStatus     string          `json:"health_status"` // "HEALTHY", "DEGRADED", "UNHEALTHY"
