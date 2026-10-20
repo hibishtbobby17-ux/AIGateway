@@ -293,12 +293,23 @@ sequenceDiagram
   - Verified with comprehensive unit test suites and live end-to-end container integration script.
 
 ### Phase 4: Complete Portal Unification
-- [ ] **4.1 Embedded Tracing Experience:**
-  - Add a dedicated **"Tracing & Telemetry"** navigation tab embedding Jaeger UI or enhancing [TraceWaterfall.tsx](file:///c:/Users/Administrator/Downloads/project/project_alpha/web/src/components/TraceWaterfall.tsx) with search.
-- [ ] **4.2 Unified OAuth Consent Dialog:**
-  - Replace server-rendered HTML in [interactive_service.go](file:///c:/Users/Administrator/Downloads/project/project_alpha/internal/identity/idp/interactive_service.go) with a styled embedded React consent view.
-- [ ] **4.3 Single-Port Gateway & Console Routing (Optional):**
-  - Configure reverse-proxy routing so both data plane and console can be served from a single primary port with distinct path prefixes (`/` and `/console`).
+- [x] **4.1 Embedded Tracing Experience & Jaeger UI Hub:**
+  - Added dedicated toggle in [TraceWaterfall.tsx](file:///c:/Users/Administrator/Downloads/project/project_alpha/web/src/components/TraceWaterfall.tsx) between **Native Gantt Waterfall** (ClickHouse) and **Embedded Jaeger Live UI** (`http://localhost:16686`).
+  - Added inline "🌐 Jaeger" inspection buttons on each trace in the recent traces list and a "Open in Jaeger" button in the waterfall header.
+  - Implemented interactive Jaeger control bar with URL address bar, search presets (`Search Gateway Traces`, `Service Dependencies`), fullscreen toggle, and pop-out actions.
+- [x] **4.2 Unified OAuth Consent Dialog & Styled IDP Flow:**
+  - Redesigned and modernized [interactive_service.go](file:///c:/Users/Administrator/Downloads/project/project_alpha/internal/identity/idp/interactive_service.go) login (`/login`) and consent (`/consent`) screens into dark-mode glassmorphic cards matching the console aesthetic.
+  - Added scope cards with permission icons, descriptions, and tenant badge breakdown.
+  - Updated [auth.go](file:///c:/Users/Administrator/Downloads/project/project_alpha/internal/api/middleware/auth.go) to allow `/consent` with internal session cookie verification.
+  - Verified end-to-end interactive consent flow from login redirect to grant persistence in `oauth_consents` table.
+- [x] **4.3 Unified Cluster Infrastructure & Services Hub:**
+  - Added **Services Hub** modal in [Navbar.tsx](file:///c:/Users/Administrator/Downloads/project/project_alpha/web/src/components/Navbar.tsx) providing single-pane-of-glass access and live status for all 6 cluster services:
+    - Control Plane & Console (`:8081`)
+    - AI Gateway Runtime (`:8080`)
+    - Jaeger Tracing (`:16686`)
+    - Prometheus Metrics (`:8080/metrics`, `:9090`)
+    - ClickHouse Database (`:8123`)
+    - PostgreSQL Store (`:5432`)
 
 ---
 

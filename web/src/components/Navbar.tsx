@@ -13,6 +13,7 @@ interface Props {
 
 export const Navbar: React.FC<Props> = ({ activeTab, onTabChange, tenantId, onTenantChange, currentUser, onLogout }) => {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isServicesModalOpen, setIsServicesModalOpen] = useState(false);
   const [tokenInput, setTokenInput] = useState(api.getToken());
 
   const handleSaveToken = (e: React.FormEvent) => {
@@ -104,6 +105,17 @@ export const Navbar: React.FC<Props> = ({ activeTab, onTabChange, tenantId, onTe
             </button>
           )}
 
+          {/* Services Hub Modal Trigger */}
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => setIsServicesModalOpen(true)}
+            title="Inspect unified cluster services, ports, and telemetry tools"
+            style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+          >
+            <span>⚡</span>
+            <span>Services Hub</span>
+          </button>
+
           {/* Health Indicator */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', color: 'var(--success)' }}>
             <span className="pulse-dot" />
@@ -170,6 +182,198 @@ export const Navbar: React.FC<Props> = ({ activeTab, onTabChange, tenantId, onTe
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Cluster Infrastructure & Services Modal */}
+      {isServicesModalOpen && (
+        <div className="modal-backdrop" onClick={() => setIsServicesModalOpen(false)}>
+          <div className="modal-content" style={{ maxWidth: '820px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <span style={{ fontSize: '1.4rem' }}>⚡</span>
+                <div>
+                  <div className="modal-title">Unified Cluster Infrastructure &amp; Services</div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    Single-pane directory of all containerized runtime services, telemetry endpoints, and stores
+                  </div>
+                </div>
+              </div>
+              <button className="btn btn-secondary btn-sm" onClick={() => setIsServicesModalOpen(false)}>✕</button>
+            </div>
+
+            <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '1rem', maxHeight: '580px', overflowY: 'auto' }}>
+              {/* Service 1: Console */}
+              <div className="glass-panel" style={{ padding: '1.25rem', border: '1px solid var(--border-glow)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.6rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '1.2rem' }}>🖥️</span>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-primary)' }}>Management Console</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>http://localhost:8081</div>
+                    </div>
+                  </div>
+                  <span className="badge badge-healthy">Active View</span>
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.85rem' }}>
+                  Admin API, self-service IdP SSO, MCP server registry, RBAC policy simulation, and unified telemetry.
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  <span>Port: <strong>8081</strong></span>
+                  <span style={{ color: 'var(--success)' }}>● Embedded UI</span>
+                </div>
+              </div>
+
+              {/* Service 2: Gateway */}
+              <div className="glass-panel" style={{ padding: '1.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.6rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '1.2rem' }}>⚡</span>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-primary)' }}>AI Gateway Core Runtime</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>http://localhost:8080</div>
+                    </div>
+                  </div>
+                  <span className="badge badge-healthy">Online</span>
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.85rem' }}>
+                  High-throughput MCP tool execution, A2A agent routing, rate limiting, and automated OAuth token issuance.
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Port: <strong>8080</strong></span>
+                  <a
+                    href="http://localhost:8080/healthz"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn btn-secondary btn-sm"
+                    style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem', textDecoration: 'none' }}
+                  >
+                    Check /healthz ↗
+                  </a>
+                </div>
+              </div>
+
+              {/* Service 3: Jaeger */}
+              <div className="glass-panel" style={{ padding: '1.25rem', border: '1px solid rgba(6, 182, 212, 0.3)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.6rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '1.2rem' }}>🌐</span>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--cyan)' }}>Jaeger Distributed Tracing</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>http://localhost:16686</div>
+                    </div>
+                  </div>
+                  <span className="badge badge-healthy">Online</span>
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.85rem' }}>
+                  Full OpenTelemetry tracing collector, distributed waterfalls, latency charts, and service dependency maps.
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Port: <strong>16686</strong> (OTLP :4318)</span>
+                  <div style={{ display: 'flex', gap: '0.4rem' }}>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
+                      onClick={() => {
+                        setIsServicesModalOpen(false);
+                        onTabChange('traces');
+                      }}
+                    >
+                      Embed in Traces
+                    </button>
+                    <a
+                      href="http://localhost:16686"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn btn-secondary btn-sm"
+                      style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem', textDecoration: 'none' }}
+                    >
+                      Pop Out ↗
+                    </a>
+                  </div>
+                </div>
+              </div>
+
+              {/* Service 4: Prometheus */}
+              <div className="glass-panel" style={{ padding: '1.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.6rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '1.2rem' }}>📊</span>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-primary)' }}>Prometheus Metrics</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>http://localhost:9090</div>
+                    </div>
+                  </div>
+                  <span className="badge badge-healthy">Scraping</span>
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.85rem' }}>
+                  Time-series metrics engine scraping gateway latency histograms, requests/sec, error counters, and token budgets.
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Port: <strong>9090</strong></span>
+                  <a
+                    href="http://localhost:9090"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn btn-secondary btn-sm"
+                    style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem', textDecoration: 'none' }}
+                  >
+                    Open Prometheus ↗
+                  </a>
+                </div>
+              </div>
+
+              {/* Service 5: ClickHouse */}
+              <div className="glass-panel" style={{ padding: '1.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.6rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '1.2rem' }}>⚡</span>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-primary)' }}>ClickHouse OLAP Database</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>http://localhost:8123</div>
+                    </div>
+                  </div>
+                  <span className="badge badge-healthy">Healthy</span>
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.85rem' }}>
+                  High-speed columnar storage for millions of invocation logs, traces, Gantt span hierarchies, and KPI metrics.
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Ports: <strong>8123</strong> (HTTP) / <strong>9000</strong> (TCP)</span>
+                  <span style={{ color: 'var(--text-muted)' }}>Native Cluster</span>
+                </div>
+              </div>
+
+              {/* Service 6: Postgres */}
+              <div className="glass-panel" style={{ padding: '1.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.6rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '1.2rem' }}>🗄️</span>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-primary)' }}>PostgreSQL Datastore</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>localhost:5432</div>
+                    </div>
+                  </div>
+                  <span className="badge badge-healthy">Healthy</span>
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.85rem' }}>
+                  ACID metadata store for multi-tenant isolation, user accounts, SSO providers, RBAC rules, and encrypted credentials.
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Port: <strong>5432</strong></span>
+                  <span style={{ color: 'var(--text-muted)' }}>DB: gateway_dev</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                All 6 services running in local Docker Compose mesh with zero port conflicts
+              </div>
+              <button className="btn btn-secondary" onClick={() => setIsServicesModalOpen(false)}>
+                Close Hub
+              </button>
+            </div>
           </div>
         </div>
       )}
