@@ -288,27 +288,27 @@ Acceptance criteria
 - [x] Tests cover disconnects, duplicate requests, and upstream failures.
 9. Milestone 5: Observability pipeline
 Tasks
-Integrate OpenTelemetry instrumentation in the gateway.
-Add inbound and outbound request spans.
-Add MCP tool-call and A2A task attributes.
-Propagate W3C Trace Context.
-Configure OTLP ingestion over required transports.
-Implement telemetry authentication and tenant attribution.
-Integrate trace, log, and metric storage adapters.
-Define sampling, batching, retention, and overload policies.
-Add redaction and sensitive-field filtering.
-Add trace/log correlation.
-Add example SDK instrumentation for Go, Python, TypeScript, and Java.
-Document application log ingestion options.
-Add telemetry failure and overload tests.
+- [x] Integrate OpenTelemetry instrumentation in the gateway (`internal/observability/tracing`).
+- [x] Add inbound and outbound request spans (`TraceMiddleware` and W3C context).
+- [x] Add MCP tool-call and A2A task attributes (`mcp.tool.*`, `a2a.task.*`, `tenant.id`).
+- [x] Propagate W3C Trace Context (`traceparent` and `tracestate`).
+- [x] Configure OTLP ingestion over required transports (`/v1/traces`, `/v1/logs`, `/v1/metrics`).
+- [x] Implement telemetry authentication and tenant attribution (`X-Tenant-ID`, token claims, resource attributes).
+- [x] Integrate trace, log, and metric storage adapters (`internal/observability/storage` backed by SQL and memory).
+- [x] Define sampling, batching, retention, and overload policies (`internal/observability/pipeline` bounded ring buffer & load shedding).
+- [x] Add redaction and sensitive-field filtering (`internal/observability/redaction`).
+- [x] Add trace/log correlation (`correlation.WithContext`, trace ID & span ID mapping).
+- [x] Add example SDK instrumentation for Go, Python, TypeScript, and Java (`docs/observability/instrumentation-guide.md`).
+- [x] Document application log ingestion options (`docs/observability/instrumentation-guide.md`).
+- [x] Add telemetry failure and overload tests (`tests/integration/observability_pipeline_test.go`).
 Acceptance criteria
-Gateway requests emit useful spans and metrics.
-Instrumented applications can export telemetry to the platform.
-Trace context is preserved across supported boundaries.
-Telemetry is attributed to the correct tenant.
-Sensitive values are redacted according to policy.
-Gateway requests do not block indefinitely on telemetry storage.
-Buffering and memory usage remain bounded during backend outages.
+- [x] Gateway requests emit useful spans and metrics.
+- [x] Instrumented applications can export telemetry to the platform.
+- [x] Trace context is preserved across supported boundaries.
+- [x] Telemetry is attributed to the correct tenant.
+- [x] Sensitive values are redacted according to policy.
+- [x] Gateway requests do not block indefinitely on telemetry storage.
+- [x] Buffering and memory usage remain bounded during backend outages.
 10. Milestone 6: Topology and console
 Tasks
 Create a React/TypeScript web frontend and tenant-aware console authentication.
@@ -410,14 +410,14 @@ Maintain this checklist at the end of every coding session:
 
 | Field | Current Status |
 | :--- | :--- |
-| **Current milestone** | Milestone 4: A2A Gateway (complete); preparing Milestone 5: Observability pipeline |
-| **Completed tasks** | Milestones 0, 1, 2, 3, and 4 are complete and verified. Milestone 4 implements the full Agent-to-Agent (A2A) Gateway stack: pinned `a2a/v1` protocol specification; Agent Card JSON validation and discovery; SQL and in-memory multi-tenant agent registry (`internal/a2a/registry`); durable task state machine and historical task events with SSE pub/sub streaming (`internal/a2a/tasks`); resilient upstream agent client with SSRF protection, circuit breakers, concurrency bulkheads, token anti-relay, and W3C `traceparent` injection (`internal/a2a/routing`); A2A router coordinating task dispatch, deadlines, and state transitions; A2A HTTP transport handler mounted into `cmd/gateway/main.go` supporting synchronous and asynchronous task submissions (`POST /a2a/v1/tasks`), idempotent re-executions, task details, cancellation, SSE event streaming, policy enforcement (`a2a:agents:discover`, `a2a:tasks:submit`), and security audit trails; and comprehensive unit and end-to-end integration tests. |
-| **In progress** | None (Milestone 4 complete). |
+| **Current milestone** | Milestone 5: Observability pipeline (complete); preparing Milestone 6: Topology and console |
+| **Completed tasks** | Milestones 0, 1, 2, 3, 4, and 5 are complete and verified. Milestone 5 implements the complete OpenTelemetry observability pipeline: W3C Trace Context propagation; inbound HTTP server spans with status codes and tenant attribution; outbound traceparent injection; domain models for spans, logs, and metrics; recursive data redaction for sensitive fields and authorization headers; asynchronous bounded ring buffer with non-blocking load shedding under overload; ratio and error sampling; batch storage workers for SQL (`telemetry_spans`, `telemetry_logs`) and in-memory ring buffers; Prometheus-compatible `/metrics` scrape endpoint; standard OTLP/HTTP ingestion endpoints (`/v1/traces`, `/v1/logs`, `/v1/metrics`) with tenant attribution; developer instrumentation guides with examples for Go, Python, TypeScript, and Java; and comprehensive end-to-end integration tests. |
+| **In progress** | None (Milestone 5 complete). |
 | **Blocked** | None. |
-| **Tests executed** | `go test ./...` and `go vet ./...` passed across all packages with 0 errors, including all new A2A registry, routing, task store, transport, and end-to-end integration tests. |
+| **Tests executed** | `go test ./...` and `go vet ./...` passed across all packages with 0 errors, including all new telemetry, tracing, OTLP ingestion, pipeline, and end-to-end integration tests. |
 | **Known defects** | Production key-encryption secret provisioning via cloud secret managers and automated old-key retirement policy are documented for future milestones. Resource servers require shared SQL availability for revocation checks. |
-| **Architectural decisions** | ADR-0001 through ADR-0009 active. Pinned MCP version 2024-11-05. Pinned A2A protocol version `a2a/v1`. |
-| **Next task** | Begin Milestone 5: Observability pipeline (OpenTelemetry tracing, metrics, OTLP ingestion, span attributes, and log correlation). |
+| **Architectural decisions** | ADR-0001 through ADR-0009 active. Pinned MCP version 2024-11-05. Pinned A2A protocol version `a2a/v1`. OpenTelemetry OTLP/HTTP and Prometheus standard metrics. |
+| **Next task** | Begin Milestone 6: Topology and console (React/TypeScript console, configured vs observed topology graph, trace search and waterfall view, correlated log search, and management APIs). |
 
 15. First action
 

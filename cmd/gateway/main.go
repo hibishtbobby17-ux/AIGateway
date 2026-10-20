@@ -28,6 +28,11 @@ import (
 	"project_alpha/internal/mcp/session"
 	"project_alpha/internal/mcp/transport"
 	"project_alpha/internal/observability/correlation"
+	obsmetrics "project_alpha/internal/observability/metrics"
+	"project_alpha/internal/observability/otlp"
+	"project_alpha/internal/observability/pipeline"
+	obsstorage "project_alpha/internal/observability/storage"
+	"project_alpha/internal/observability/tracing"
 	"project_alpha/internal/policy"
 	"project_alpha/internal/storage"
 )
@@ -158,11 +163,31 @@ func main() {
 	}
 	oauthServer.SetAuthorizationService(interactiveIdP)
 
-	// 8. Setup Gateway HTTP router
+	// 8. Initialize Observability Pipeline, Tracer, Metrics & OTLP Ingestion
+	traceStore := obsstorage.NewSQLTraceStore(db)
+	logStore := obsstorage.NewSQLLogStore(db)
+	telemetryPipe := pipeline.NewPipeline(traceStore, logStore, pipeline.Config{
+		Capacity:      10000,
+		BatchSize:     100,
+		FlushInterval: 200 * time.Millisecond,
+	})
+	defer telemetryPipe.Close()
+
+	tracer := tracing.NewTracer("ai-gateway", telemetryPipe)
+	metricsReg := obsmetrics.NewRegistry()
+	_ = obsmetrics.NewGatewayMetrics(metricsReg)
+	otlpHandler := otlp.NewIngestionHandler(telemetryPipe, "default")
+	logger.Info("Observability pipeline and OTLP ingestion initialized", "otlp_endpoints", "/v1/traces, /v1/logs, /v1/metrics")
+
+	// 9. Setup Gateway HTTP router
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthHandler.LivenessHandler)
 	mux.HandleFunc("/readyz", healthHandler.ReadinessHandler)
 	mux.HandleFunc("/startupz", healthHandler.StartupHandler)
+
+	// Mount Metrics and OTLP ingestion endpoints
+	mux.HandleFunc("/metrics", metricsReg.Handler())
+	otlpHandler.Mount(mux)
 
 	// Mount OAuth and IdP endpoints
 	oauthServer.Mount(mux)
@@ -181,15 +206,18 @@ func main() {
 		if r.URL.Path == "/" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"platform":"AI Gateway & Observability Platform","status":"online","mcp_endpoint":"/mcp/v1/sse","a2a_endpoint":"/a2a/v1/agents"}`))
+			_, _ = w.Write([]byte(`{"platform":"AI Gateway & Observability Platform","status":"online","mcp_endpoint":"/mcp/v1/sse","a2a_endpoint":"/a2a/v1/agents","otlp_traces":"/v1/traces","metrics":"/metrics"}`))
 			return
 		}
 		http.NotFound(w, r)
 	})
 
+	gatewayHandler := tracing.TraceMiddleware(tracer)(mux)
+	gatewayHandler = middleware.AuthMiddleware(verifier, policyEngine)(gatewayHandler)
+
 	server := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
-		Handler:      middleware.AuthMiddleware(verifier, policyEngine)(mux),
+		Handler:      gatewayHandler,
 		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
 		IdleTimeout:  cfg.Server.IdleTimeout,

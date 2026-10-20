@@ -62,8 +62,28 @@ func AuthMiddleware(verifier *tokens.Verifier, engine *policy.Engine) func(http.
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			path := r.URL.Path
 
-			// Public endpoints that do not require authentication
+			// Public endpoints that do not require mandatory authentication
 			if isPublicEndpoint(path) {
+				authHeader := r.Header.Get("Authorization")
+				if authHeader != "" && strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+					tokenStr := strings.TrimSpace(authHeader[7:])
+					if claims, err := verifier.VerifyContext(r.Context(), tokenStr); err == nil {
+						ctx := r.Context()
+						ctx = delegation.WithInboundToken(ctx, tokenStr)
+						ctx = context.WithValue(ctx, correlation.TenantIDKey, claims.TenantID)
+						ctx = context.WithValue(ctx, SubjectKey, claims.Subject)
+						ctx = context.WithValue(ctx, RolesKey, claims.Roles)
+						ctx = context.WithValue(ctx, ScopesKey, claims.Scopes)
+						ctx = principal.WithContext(ctx, principal.Principal{
+							Subject:    claims.Subject,
+							TenantID:   claims.TenantID,
+							Roles:      append([]string(nil), claims.Roles...),
+							Scopes:     append([]string(nil), claims.Scopes...),
+							Attributes: cloneAttributes(claims.Attributes),
+						})
+						r = r.WithContext(ctx)
+					}
+				}
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -125,13 +145,16 @@ func cloneAttributes(attributes map[string]any) map[string]any {
 }
 
 func isPublicEndpoint(p string) bool {
-	if p == "/healthz" || p == "/readyz" || p == "/startupz" || p == "/" {
+	if p == "/healthz" || p == "/readyz" || p == "/startupz" || p == "/" || p == "/metrics" {
 		return true
 	}
 	if strings.HasPrefix(p, "/.well-known/") {
 		return true
 	}
 	if p == "/oauth/token" || p == "/oauth/revoke" || p == "/login" {
+		return true
+	}
+	if strings.HasPrefix(p, "/v1/") {
 		return true
 	}
 	return false

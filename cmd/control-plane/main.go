@@ -18,6 +18,7 @@ import (
 	"project_alpha/internal/identity/keys"
 	"project_alpha/internal/identity/tokens"
 	"project_alpha/internal/observability/correlation"
+	obsmetrics "project_alpha/internal/observability/metrics"
 	"project_alpha/internal/policy"
 	"project_alpha/internal/storage"
 )
@@ -109,6 +110,9 @@ func main() {
 	mux.HandleFunc("/healthz", healthHandler.LivenessHandler)
 	mux.HandleFunc("/readyz", healthHandler.ReadinessHandler)
 	mux.HandleFunc("/startupz", healthHandler.StartupHandler)
+
+	metricsReg := obsmetrics.NewRegistry()
+	mux.HandleFunc("/metrics", metricsReg.Handler())
 
 	mux.HandleFunc("/api/v1/status", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
