@@ -34,6 +34,7 @@ import (
 	obsstorage "project_alpha/internal/observability/storage"
 	"project_alpha/internal/observability/tracing"
 	"project_alpha/internal/policy"
+	"project_alpha/internal/resilience"
 	"project_alpha/internal/storage"
 )
 
@@ -212,8 +213,15 @@ func main() {
 		http.NotFound(w, r)
 	})
 
+	rateLimiter := resilience.NewRateLimiter(resilience.RateLimiterConfig{
+		RequestsPerMinute: 1200,
+		Burst:             100,
+	})
+
 	gatewayHandler := tracing.TraceMiddleware(tracer)(mux)
 	gatewayHandler = middleware.AuthMiddleware(verifier, policyEngine)(gatewayHandler)
+	gatewayHandler = resilience.RateLimitMiddleware(rateLimiter, resilience.DefaultKeyExtractor)(gatewayHandler)
+	gatewayHandler = resilience.MaxBytesMiddleware(resilience.DefaultMaxRequestBodySize)(gatewayHandler)
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),

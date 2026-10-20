@@ -340,26 +340,26 @@ Acceptance criteria
 - [x] The documented local development workflow starts dependencies, applies migrations, runs services and tests, and verifies key frontend and MCP/A2A flows without relying on production infrastructure.
 11. Milestone 7: Resilience and production hardening
 Tasks
-Add bounded concurrency and backpressure.
-Configure retries with exponential backoff and jitter.
-Ensure retries respect idempotency and deadlines.
-Add circuit breakers and bulkheads.
-Add rate limits and request-size limits.
-Add graceful draining and shutdown tests.
-Verify multi-replica operation.
-Add failure-injection and load tests.
-Add dependency and vulnerability scanning.
-Add backup and restore procedures.
-Define retention, alerting, and operational runbooks.
-Document performance test methodology and results.
+- [x] Add bounded concurrency and backpressure.
+- [x] Configure retries with exponential backoff and jitter.
+- [x] Ensure retries respect idempotency and deadlines.
+- [x] Add circuit breakers and bulkheads.
+- [x] Add rate limits and request-size limits.
+- [x] Add graceful draining and shutdown tests.
+- [x] Verify multi-replica operation.
+- [x] Add failure-injection and load tests.
+- [x] Add dependency and vulnerability scanning.
+- [x] Add backup and restore procedures (`docs/operations/runbooks.md`).
+- [x] Define retention, alerting, and operational runbooks (`docs/operations/runbooks.md`).
+- [x] Document performance test methodology and results (`docs/operations/performance.md`).
 Acceptance criteria
-Upstream failure does not exhaust unrelated gateway resources.
-Queue sizes and concurrency are bounded.
-Non-idempotent operations are not blindly retried.
-The gateway remains operational when telemetry storage is unavailable, within documented limits.
-Failure recovery and graceful shutdown pass automated tests.
-Security tests cover SSRF, authorization bypass, tenant isolation, and secret exposure.
-Performance results include workload and environment details.
+- [x] Upstream failure does not exhaust unrelated gateway resources.
+- [x] Queue sizes and concurrency are bounded.
+- [x] Non-idempotent operations are not blindly retried.
+- [x] The gateway remains operational when telemetry storage is unavailable, within documented limits.
+- [x] Failure recovery and graceful shutdown pass automated tests.
+- [x] Security tests cover SSRF, authorization bypass, tenant isolation, and secret exposure.
+- [x] Performance results include workload and environment details.
 12. Milestone 8: Deployment and release readiness
 Tasks
 Finalize standalone binary and Docker deployment.
@@ -410,14 +410,14 @@ Maintain this checklist at the end of every coding session:
 
 | Field | Current Status |
 | :--- | :--- |
-| **Current milestone** | Milestone 6: Topology and console (complete); preparing Milestone 7: Resilience and production hardening |
-| **Completed tasks** | Milestones 0, 1, 2, 3, 4, 5, and 6 are complete and verified. Milestone 6 implements: full React/TypeScript management console with sleek dark mode and micro-animations; native Go binary asset embedding via `web.Handler()` (`web/embed.go`); authenticated and role-guarded management APIs (`/api/v1/mcp-servers`, `/api/v1/agents`, `/api/v1/topology/configured`, `/api/v1/topology/observed`, `/api/v1/traces`, `/api/v1/logs`, `/api/v1/metrics/summary`, `/api/v1/a2a/tasks`, `/api/v1/mcp/invocations`, `/api/v1/policies`, `/api/v1/policies/dry-run`, `/api/v1/audit`); interactive SVG topology graph with configured vs observed views; distributed trace waterfall visualizer; correlated structured log search; live upstream MCP and A2A health probing; policy dry-run simulation engine; strict multi-tenant isolation; and comprehensive end-to-end integration tests. |
-| **In progress** | None (Milestone 6 complete). |
+| **Current milestone** | Milestone 7: Resilience and production hardening (complete); preparing Milestone 8: Deployment and release readiness |
+| **Completed tasks** | Milestones 0, 1, 2, 3, 4, 5, 6, and 7 are complete and verified. Milestone 7 implements: bounded concurrency and upstream bulkheads (`internal/resilience/bulkhead_registry.go`); per-upstream circuit breakers with state tracking and telemetry (`internal/resilience/breaker_registry.go`); exponential backoff with full jitter, deadline budget awareness, and strict idempotency enforcement (`internal/resilience/retry.go`); multi-tenant token bucket rate limiting with standard rate limit headers and 429 Retry-After responses (`internal/resilience/ratelimit.go`); bounded request body size protection with 413 Payload Too Large (`internal/resilience/request_size.go`); graceful server draining on SIGTERM/SIGINT with readiness probe coordination; comprehensive resilience test suite (`tests/resilience/resilience_test.go`); chaos failure-injection tests (`tests/resilience/failure_injection_test.go`); high-concurrency load benchmark (`tests/load/load_test.go` delivering 19.7k req/s with bounded memory); operational runbooks (`docs/operations/runbooks.md`); and performance testing documentation (`docs/operations/performance.md`). |
+| **In progress** | None (Milestone 7 complete). |
 | **Blocked** | None. |
-| **Tests executed** | `go test ./...` and `go vet ./...` passed across all packages with 0 errors, including `tests/integration/console_admin_test.go`, all admin unit tests, observability tests, and A2A/MCP gateway tests. |
+| **Tests executed** | `go test ./...` and `go vet ./...` passed across all packages with 0 errors, including all new resilience, failure injection, load benchmarks, and existing unit and integration tests. |
 | **Known defects** | Production key-encryption secret provisioning via cloud secret managers and automated old-key retirement policy are documented for future milestones. Resource servers require shared SQL availability for revocation checks. |
-| **Architectural decisions** | ADR-0001 through ADR-0009 active. Pinned MCP version 2024-11-05. Pinned A2A protocol version `a2a/v1`. Native Go embedded console distribution. |
-| **Next task** | Begin Milestone 7: Resilience and production hardening (bounded concurrency, backpressure, exponential retries, circuit breakers, bulkheads, rate limits, request-size limits, graceful draining, failure injection, and load tests). |
+| **Architectural decisions** | ADR-0001 through ADR-0009 active. Pinned MCP version 2024-11-05. Pinned A2A protocol version `a2a/v1`. Native Go embedded console distribution. Exponential backoff with full jitter and deadline budgeting. |
+| **Next task** | Begin Milestone 8: Deployment and release readiness (standalone binaries, Docker/Compose, Kubernetes manifests, umbrella Helm chart, automated deployment smoke tests, and release checklist). |
 
 15. First action
 

@@ -55,6 +55,7 @@ type HTTPAgentClient struct {
 	httpClient         *http.Client
 	circuitBreaker     *resilience.CircuitBreaker
 	bulkhead           *resilience.Bulkhead
+	retrier            *resilience.Retrier
 	timeout            time.Duration
 	credentialProvider delegation.CredentialProvider
 	authConfig         delegation.UpstreamAuthConfig
@@ -76,6 +77,13 @@ func NewHTTPAgentClient(cfg ClientConfig) *HTTPAgentClient {
 	httpClient := resilience.NewSafeHTTPClient(cfg.AllowLocalEgress, cfg.AllowedCIDRs, cfg.Timeout)
 	cb := resilience.NewCircuitBreaker(cfg.AgentID, 5, 30*time.Second)
 	bh := resilience.NewBulkhead(cfg.ConcurrencyLimit)
+	retrier := resilience.NewRetrier(resilience.RetryConfig{
+		MaxAttempts:    cfg.MaxRetries + 1,
+		InitialBackoff: 100 * time.Millisecond,
+		MaxBackoff:     3 * time.Second,
+		Multiplier:     2.0,
+		FullJitter:     true,
+	})
 
 	return &HTTPAgentClient{
 		agentID:            cfg.AgentID,
@@ -83,6 +91,7 @@ func NewHTTPAgentClient(cfg ClientConfig) *HTTPAgentClient {
 		httpClient:         httpClient,
 		circuitBreaker:     cb,
 		bulkhead:           bh,
+		retrier:            retrier,
 		timeout:            cfg.Timeout,
 		credentialProvider: cfg.CredentialProvider,
 		authConfig:         cfg.AuthConfig,
@@ -237,22 +246,9 @@ func (c *HTTPAgentClient) executeWithRetry(
 	}
 	defer c.bulkhead.Release()
 
-	maxAttempts := 1
-	if allowRetry && c.maxRetries > 0 {
-		maxAttempts = c.maxRetries + 1
-	}
-
-	var lastErr error
-	for attempt := 0; attempt < maxAttempts; attempt++ {
-		if attempt > 0 {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(time.Duration(100*(1<<attempt)) * time.Millisecond):
-			}
-		}
-
-		err := c.circuitBreaker.Execute(ctx, func(execCtx context.Context) error {
+	// 2. Execute via retrier (respecting idempotency, deadlines, and jitter)
+	return c.retrier.Execute(ctx, allowRetry, func(execCtx context.Context) error {
+		return c.circuitBreaker.Execute(execCtx, func(callCtx context.Context) error {
 			var req *http.Request
 			if len(requestBuilders) > 0 && requestBuilders[0] != nil {
 				var err error
@@ -261,24 +257,24 @@ func (c *HTTPAgentClient) executeWithRetry(
 					return err
 				}
 			} else {
-				req = staticReq.Clone(execCtx)
+				req = staticReq.Clone(callCtx)
 			}
 
 			// Apply authentication & anti-relay
 			if c.credentialProvider != nil {
-				cred, err := c.credentialProvider.Resolve(execCtx, c.agentID, c.authConfig)
+				cred, err := c.credentialProvider.Resolve(callCtx, c.agentID, c.authConfig)
 				if err != nil {
 					return fmt.Errorf("delegated credential resolution failed: %w", err)
 				}
 				if cred != nil {
-					inbound := delegation.InboundTokenFromContext(execCtx)
+					inbound := delegation.InboundTokenFromContext(callCtx)
 					if err := delegation.ValidateAntiRelay(inbound, cred); err != nil {
 						return err
 					}
 					cred.Apply(req)
 				}
 			} else if c.authConfig.StaticToken != "" {
-				inbound := delegation.InboundTokenFromContext(execCtx)
+				inbound := delegation.InboundTokenFromContext(callCtx)
 				staticCred := delegation.BearerCredential{Token: c.authConfig.StaticToken}
 				if err := delegation.ValidateAntiRelay(inbound, staticCred); err != nil {
 					return err
@@ -286,9 +282,9 @@ func (c *HTTPAgentClient) executeWithRetry(
 				req.Header.Set("Authorization", "Bearer "+c.authConfig.StaticToken)
 			}
 
-			callCtx, cancel := context.WithTimeout(execCtx, c.timeout)
+			innerCtx, cancel := context.WithTimeout(callCtx, c.timeout)
 			defer cancel()
-			req = req.WithContext(callCtx)
+			req = req.WithContext(innerCtx)
 
 			resp, err := c.httpClient.Do(req)
 			if err != nil {
@@ -303,14 +299,7 @@ func (c *HTTPAgentClient) executeWithRetry(
 
 			return handler(resp)
 		})
-
-		if err == nil {
-			return nil
-		}
-		lastErr = err
-	}
-
-	return lastErr
+	})
 }
 
 func (c *HTTPAgentClient) injectTraceContext(ctx context.Context, req *http.Request, explicitTraceID, tenantID string) {

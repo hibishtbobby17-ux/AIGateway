@@ -34,6 +34,7 @@ type HTTPClient struct {
 	httpClient         *http.Client
 	circuitBreaker     *resilience.CircuitBreaker
 	bulkhead           *resilience.Bulkhead
+	retrier            *resilience.Retrier
 	timeout            time.Duration
 	authHeader         string
 	credentialProvider delegation.CredentialProvider
@@ -65,6 +66,7 @@ func NewHTTPClient(cfg Config) *HTTPClient {
 	httpClient := resilience.NewSafeHTTPClient(cfg.AllowLocalEgress, cfg.AllowedCIDRs, cfg.Timeout)
 	cb := resilience.NewCircuitBreaker(cfg.ServerID, 5, 30*time.Second)
 	bh := resilience.NewBulkhead(cfg.ConcurrencyLimit)
+	retrier := resilience.NewRetrier(resilience.DefaultRetryConfig())
 
 	return &HTTPClient{
 		serverID:           cfg.ServerID,
@@ -72,6 +74,7 @@ func NewHTTPClient(cfg Config) *HTTPClient {
 		httpClient:         httpClient,
 		circuitBreaker:     cb,
 		bulkhead:           bh,
+		retrier:            retrier,
 		timeout:            cfg.Timeout,
 		authHeader:         cfg.AuthHeader,
 		credentialProvider: cfg.CredentialProvider,
@@ -101,7 +104,7 @@ func (c *HTTPClient) Initialize(ctx context.Context) (*protocol.InitializeResult
 	}
 
 	var res protocol.InitializeResult
-	if err := c.doRPC(ctx, req, &res); err != nil {
+	if err := c.doRPC(ctx, true, req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -116,13 +119,13 @@ func (c *HTTPClient) ListTools(ctx context.Context) (*protocol.ListToolsResult, 
 	}
 
 	var res protocol.ListToolsResult
-	if err := c.doRPC(ctx, req, &res); err != nil {
+	if err := c.doRPC(ctx, true, req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
 }
 
-// CallTool invokes a tool on the upstream server.
+// CallTool invokes a tool on the upstream server. Non-idempotent by default.
 func (c *HTTPClient) CallTool(ctx context.Context, name string, args json.RawMessage) (*protocol.CallToolResult, error) {
 	req := protocol.Request{
 		JSONRPC: "2.0",
@@ -135,7 +138,7 @@ func (c *HTTPClient) CallTool(ctx context.Context, name string, args json.RawMes
 	}
 
 	var res protocol.CallToolResult
-	if err := c.doRPC(ctx, req, &res); err != nil {
+	if err := c.doRPC(ctx, false, req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -150,7 +153,7 @@ func (c *HTTPClient) ListResources(ctx context.Context) (*protocol.ListResources
 	}
 
 	var res protocol.ListResourcesResult
-	if err := c.doRPC(ctx, req, &res); err != nil {
+	if err := c.doRPC(ctx, true, req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -165,7 +168,7 @@ func (c *HTTPClient) ListPrompts(ctx context.Context) (*protocol.ListPromptsResu
 	}
 
 	var res protocol.ListPromptsResult
-	if err := c.doRPC(ctx, req, &res); err != nil {
+	if err := c.doRPC(ctx, true, req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -179,7 +182,7 @@ func (c *HTTPClient) Ping(ctx context.Context) error {
 		Method:  "ping",
 	}
 	var res map[string]any
-	return c.doRPC(ctx, req, &res)
+	return c.doRPC(ctx, true, req, &res)
 }
 
 // Close cleans up client connections.
@@ -188,75 +191,77 @@ func (c *HTTPClient) Close() error {
 	return nil
 }
 
-func (c *HTTPClient) doRPC(ctx context.Context, rpcReq protocol.Request, resultDest any) error {
+func (c *HTTPClient) doRPC(ctx context.Context, isIdempotent bool, rpcReq protocol.Request, resultDest any) error {
 	// 1. Acquire bulkhead concurrency slot
 	if err := c.bulkhead.Acquire(ctx); err != nil {
 		return err
 	}
 	defer c.bulkhead.Release()
 
-	// 2. Execute via circuit breaker with timeout
-	return c.circuitBreaker.Execute(ctx, func(execCtx context.Context) error {
-		callCtx, cancel := context.WithTimeout(execCtx, c.timeout)
-		defer cancel()
+	// 2. Execute via retrier (respecting idempotency) wrapping circuit breaker
+	return c.retrier.Execute(ctx, isIdempotent, func(execCtx context.Context) error {
+		return c.circuitBreaker.Execute(execCtx, func(callCtx context.Context) error {
+			innerCtx, cancel := context.WithTimeout(callCtx, c.timeout)
+			defer cancel()
 
-		payload, err := json.Marshal(rpcReq)
-		if err != nil {
-			return err
-		}
-
-		httpReq, err := http.NewRequestWithContext(callCtx, http.MethodPost, c.endpointURL, bytes.NewReader(payload))
-		if err != nil {
-			return err
-		}
-		httpReq.Header.Set("Content-Type", "application/json")
-		if c.credentialProvider != nil {
-			cred, err := c.credentialProvider.Resolve(execCtx, c.serverID, c.authConfig)
+			payload, err := json.Marshal(rpcReq)
 			if err != nil {
-				return fmt.Errorf("downstream credential resolution failed: %w", err)
-			}
-			if cred != nil {
-				inboundToken := delegation.InboundTokenFromContext(execCtx)
-				if err := delegation.ValidateAntiRelay(inboundToken, cred); err != nil {
-					return err
-				}
-				cred.Apply(httpReq)
-			}
-		} else if c.authHeader != "" {
-			inboundToken := delegation.InboundTokenFromContext(execCtx)
-			staticCred := delegation.BearerCredential{Token: strings.TrimPrefix(c.authHeader, "Bearer ")}
-			if err := delegation.ValidateAntiRelay(inboundToken, staticCred); err != nil {
 				return err
 			}
-			httpReq.Header.Set("Authorization", c.authHeader)
-		}
 
-		httpResp, err := c.httpClient.Do(httpReq)
-		if err != nil {
-			return fmt.Errorf("upstream call failed: %w", err)
-		}
-		defer httpResp.Body.Close()
-
-		if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
-			return fmt.Errorf("upstream returned non-2xx status: %d", httpResp.StatusCode)
-		}
-
-		var rpcResp protocol.Response
-		if err := json.NewDecoder(httpResp.Body).Decode(&rpcResp); err != nil {
-			return fmt.Errorf("failed decoding upstream JSON-RPC response: %w", err)
-		}
-
-		if rpcResp.Error != nil {
-			return rpcResp.Error
-		}
-
-		if resultDest != nil && len(rpcResp.Result) > 0 {
-			if err := json.Unmarshal(rpcResp.Result, resultDest); err != nil {
-				return fmt.Errorf("failed unmarshaling result payload: %w", err)
+			httpReq, err := http.NewRequestWithContext(innerCtx, http.MethodPost, c.endpointURL, bytes.NewReader(payload))
+			if err != nil {
+				return err
 			}
-		}
+			httpReq.Header.Set("Content-Type", "application/json")
+			if c.credentialProvider != nil {
+				cred, err := c.credentialProvider.Resolve(execCtx, c.serverID, c.authConfig)
+				if err != nil {
+					return fmt.Errorf("downstream credential resolution failed: %w", err)
+				}
+				if cred != nil {
+					inboundToken := delegation.InboundTokenFromContext(execCtx)
+					if err := delegation.ValidateAntiRelay(inboundToken, cred); err != nil {
+						return err
+					}
+					cred.Apply(httpReq)
+				}
+			} else if c.authHeader != "" {
+				inboundToken := delegation.InboundTokenFromContext(execCtx)
+				staticCred := delegation.BearerCredential{Token: strings.TrimPrefix(c.authHeader, "Bearer ")}
+				if err := delegation.ValidateAntiRelay(inboundToken, staticCred); err != nil {
+					return err
+				}
+				httpReq.Header.Set("Authorization", c.authHeader)
+			}
 
-		return nil
+			httpResp, err := c.httpClient.Do(httpReq)
+			if err != nil {
+				return fmt.Errorf("upstream call failed: %w", err)
+			}
+			defer httpResp.Body.Close()
+
+			if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
+				return fmt.Errorf("upstream returned non-2xx status: %d", httpResp.StatusCode)
+			}
+
+			var rpcResp protocol.Response
+			if err := json.NewDecoder(httpResp.Body).Decode(&rpcResp); err != nil {
+				return fmt.Errorf("failed decoding upstream JSON-RPC response: %w", err)
+			}
+
+			if rpcResp.Error != nil {
+				return rpcResp.Error
+			}
+
+			if resultDest != nil && len(rpcResp.Result) > 0 {
+				if err := json.Unmarshal(rpcResp.Result, resultDest); err != nil {
+					return fmt.Errorf("failed unmarshaling result payload: %w", err)
+				}
+			}
+
+			return nil
+		})
 	})
 }
 
