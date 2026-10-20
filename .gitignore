@@ -33,3 +33,8 @@ clickhouse_data/
 # OS specific
 Thumbs.db
 .DS_Store
+
+# Frontend
+node_modules/
+web/node_modules/
+

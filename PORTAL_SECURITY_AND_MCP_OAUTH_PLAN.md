@@ -249,18 +249,19 @@ sequenceDiagram
 ## 5. Detailed Implementation Phases & Milestones
 
 ### Phase 1: Management Console Authentication
-- [ ] **1.1 Backend Auth Controller:**
-  - Create `internal/api/admin/auth_handler.go` with `/api/v1/auth/login`, `/logout`, and `/me`.
-  - Implement session cookie generator using signed HMAC or encrypted session tokens.
-- [ ] **1.2 Auth Middleware:**
-  - Add `AdminAuthMiddleware` in [cmd/control-plane/main.go](file:///c:/Users/Administrator/Downloads/project/project_alpha/cmd/control-plane/main.go) protecting `/api/v1/*`.
-- [ ] **1.3 Seed Default Admin:**
-  - Update [cmd/dev-seed/main.go](file:///c:/Users/Administrator/Downloads/project/project_alpha/cmd/dev-seed/main.go) to seed an initial administrator account.
-- [ ] **1.4 Frontend Auth State & Login View:**
-  - Build `web/src/components/LoginView.tsx`.
-  - Implement `web/src/context/AuthContext.tsx`.
-  - Wrap [App.tsx](file:///c:/Users/Administrator/Downloads/project/project_alpha/web/src/App.tsx) with the auth guard.
-  - Add user profile dropdown & "Sign Out" button to [Navbar.tsx](file:///c:/Users/Administrator/Downloads/project/project_alpha/web/src/components/Navbar.tsx).
+- [x] **1.1 Backend Auth Controller:**
+  - Implemented `internal/api/admin/auth.go` with `/api/v1/auth/login`, `/logout`, and `/me`.
+  - Implemented signed ES256 session tokens with `gateway_console_session` HttpOnly cookie.
+  - Added unit test suite in `internal/api/admin/auth_test.go` (100% pass).
+- [x] **1.2 Auth Middleware:**
+  - Added session cookie and Bearer token verification in `internal/api/middleware/auth.go` and mounted routes in [cmd/control-plane/main.go](file:///c:/Users/Administrator/Downloads/project/project_alpha/cmd/control-plane/main.go) protecting `/api/v1/*`.
+- [x] **1.3 Seed & Bootstrap Default Admin:**
+  - Configured automatic startup bootstrap in [cmd/control-plane/main.go](file:///c:/Users/Administrator/Downloads/project/project_alpha/cmd/control-plane/main.go) and [cmd/dev-seed/main.go](file:///c:/Users/Administrator/Downloads/project/project_alpha/cmd/dev-seed/main.go) provisioning tenant `tenant-1` and admin (`admin` / `admin123`).
+- [x] **1.4 Frontend Auth State & Login View:**
+  - Built `web/src/components/LoginView.tsx` with dark theme, loading state, error alerts, and credentials hint.
+  - Updated [App.tsx](file:///c:/Users/Administrator/Downloads/project/project_alpha/web/src/App.tsx) with session verification, unauthenticated route guard, and logout handling.
+  - Added user profile badge (`username` + `role`) and "Sign Out" button to [Navbar.tsx](file:///c:/Users/Administrator/Downloads/project/project_alpha/web/src/components/Navbar.tsx).
+  - Verified live end-to-end authentication via automated test script.
 
 ### Phase 2: Portal SSO / IdP Configuration
 - [ ] **2.1 Admin SSO Endpoints:**
