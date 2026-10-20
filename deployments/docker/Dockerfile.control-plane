@@ -12,7 +12,7 @@ COPY web/ ./
 RUN npm run build
 
 # Stage 2: Build Go binary embedding web/dist
-FROM golang:1.22-alpine AS go-builder
+FROM golang:1.26-alpine AS go-builder
 
 WORKDIR /src
 RUN apk add --no-cache git ca-certificates tzdata
