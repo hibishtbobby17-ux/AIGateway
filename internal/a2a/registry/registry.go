@@ -42,6 +42,7 @@ type Registry interface {
 	GetAgentByName(ctx context.Context, tenantID, name string) (*Agent, error)
 	ListAgents(ctx context.Context, tenantID string) ([]*Agent, error)
 	UpdateHealth(ctx context.Context, tenantID, agentID, status string) error
+	UpdateAgent(ctx context.Context, agent *Agent) error
 	DeleteAgent(ctx context.Context, tenantID, agentID string) error
 }
 
@@ -223,6 +224,53 @@ func (r *SQLRegistry) DeleteAgent(ctx context.Context, tenantID, agentID string)
 	return nil
 }
 
+func (r *SQLRegistry) UpdateAgent(ctx context.Context, agent *Agent) error {
+	if agent == nil || agent.TenantID == "" || agent.ID == "" {
+		return ErrInvalidAgent
+	}
+	if err := agent.AgentCard.Validate(); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidAgent, err)
+	}
+
+	cardBytes, err := json.Marshal(agent.AgentCard)
+	if err != nil {
+		return fmt.Errorf("failed to marshal agent card: %w", err)
+	}
+
+	query := `
+		UPDATE agents
+		SET project_id = $1, name = $2, endpoint_url = $3,
+		    agent_card = $4, protocol_version = $5, auth_type = $6,
+		    health_status = $7
+		WHERE tenant_id = $8 AND id = $9
+	`
+	res, err := r.db.ExecContext(ctx, query,
+		agent.ProjectID,
+		agent.Name,
+		agent.EndpointURL,
+		string(cardBytes),
+		agent.ProtocolVersion,
+		agent.AuthType,
+		agent.HealthStatus,
+		agent.TenantID,
+		agent.ID,
+	)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "unique") {
+			return ErrDuplicateAgentName
+		}
+		return fmt.Errorf("failed to update agent: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
+	if n == 0 {
+		return ErrAgentNotFound
+	}
+	return nil
+}
+
 type rowScanner interface {
 	Scan(dest ...any) error
 }
@@ -377,5 +425,33 @@ func (m *MemoryRegistry) DeleteAgent(ctx context.Context, tenantID, agentID stri
 		return ErrAgentNotFound
 	}
 	delete(m.agents, key)
+	return nil
+}
+
+func (m *MemoryRegistry) UpdateAgent(ctx context.Context, agent *Agent) error {
+	if agent == nil || agent.TenantID == "" || agent.ID == "" {
+		return ErrInvalidAgent
+	}
+	if err := agent.AgentCard.Validate(); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidAgent, err)
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	key := agent.TenantID + ":" + agent.ID
+	existing, ok := m.agents[key]
+	if !ok {
+		return ErrAgentNotFound
+	}
+
+	for _, other := range m.agents {
+		if other.TenantID == agent.TenantID && other.Name == agent.Name && other.ID != agent.ID {
+			return ErrDuplicateAgentName
+		}
+	}
+
+	agent.CreatedAt = existing.CreatedAt
+	m.agents[key] = agent
 	return nil
 }

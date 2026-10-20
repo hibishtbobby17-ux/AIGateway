@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	a2aregistry "project_alpha/internal/a2a/registry"
+	a2atasks "project_alpha/internal/a2a/tasks"
 	"project_alpha/internal/api/admin"
 	"project_alpha/internal/api/health"
 	"project_alpha/internal/api/middleware"
@@ -17,10 +19,13 @@ import (
 	"project_alpha/internal/config"
 	"project_alpha/internal/identity/keys"
 	"project_alpha/internal/identity/tokens"
+	mcpregistry "project_alpha/internal/mcp/registry"
 	"project_alpha/internal/observability/correlation"
 	obsmetrics "project_alpha/internal/observability/metrics"
+	obsstorage "project_alpha/internal/observability/storage"
 	"project_alpha/internal/policy"
 	"project_alpha/internal/storage"
+	"project_alpha/web"
 )
 
 func main() {
@@ -103,7 +108,23 @@ func main() {
 
 	tenantsRepo := storage.NewSQLTenantRepository(db)
 	auditRecorder := audit.NewSQLRecorder(db)
-	adminHandler := admin.NewHandler(auditRecorder, policyRepo, tenantsRepo)
+	mcpReg := mcpregistry.NewSQLRegistry(db)
+	a2aReg := a2aregistry.NewSQLRegistry(db)
+	tasksStore := a2atasks.NewSQLStore(db)
+	traceStore := obsstorage.NewSQLTraceStore(db)
+	logStore := obsstorage.NewSQLLogStore(db)
+
+	adminHandler := admin.NewHandlerWithConfig(admin.Config{
+		Recorder:     auditRecorder,
+		PolicyRepo:   policyRepo,
+		TenantsRepo:  tenantsRepo,
+		MCPRegistry:  mcpReg,
+		A2ARegistry:  a2aReg,
+		TasksStore:   tasksStore,
+		TraceStore:   traceStore,
+		LogStore:     logStore,
+		PolicyEngine: policyEngine,
+	})
 
 	// 6. Admin API router
 	mux := http.NewServeMux()
@@ -122,23 +143,21 @@ func main() {
 
 	// Authenticated & role-guarded administrative endpoints
 	adminMux := http.NewServeMux()
-	adminMux.HandleFunc("/api/v1/audit", adminHandler.HandleGetAudit)
-	adminMux.HandleFunc("/api/v1/policies", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost {
-			adminHandler.HandleCreatePolicy(w, r)
-		} else {
-			adminHandler.HandleListPolicies(w, r)
-		}
-	})
-	adminMux.HandleFunc("/api/v1/tenants", adminHandler.HandleGetTenant)
+	adminHandler.RegisterRoutes(adminMux)
 
 	adminChain := middleware.AuthMiddleware(verifier, policyEngine)(
 		middleware.RequireRoles(auditRecorder, "platform-admin", "tenant-admin", "auditor")(adminMux),
 	)
 
-	mux.Handle("/api/v1/audit", adminChain)
-	mux.Handle("/api/v1/policies", adminChain)
-	mux.Handle("/api/v1/tenants", adminChain)
+	mux.Handle("/api/v1/", adminChain)
+
+	// Embedded management console
+	consoleHandler := web.Handler()
+	mux.Handle("/console/", http.StripPrefix("/console", consoleHandler))
+	mux.HandleFunc("/console", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/console/", http.StatusPermanentRedirect)
+	})
+	mux.Handle("/", consoleHandler)
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Admin.Host, cfg.Admin.Port),

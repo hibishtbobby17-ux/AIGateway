@@ -31,6 +31,19 @@ func (m *mockTraceStore) GetTrace(ctx context.Context, tenantID, traceID string)
 	return nil, nil
 }
 
+func (m *mockTraceStore) GetTraceSummaries(ctx context.Context, filter storage.TraceFilter) ([]*model.TraceSummary, error) {
+	return nil, nil
+}
+
+func (m *mockTraceStore) GetObservedTopology(ctx context.Context, tenantID string, startTime, endTime time.Time) (*model.ObservedTopology, error) {
+	return nil, nil
+}
+
+func (m *mockTraceStore) GetMetricsSummary(ctx context.Context, tenantID string, startTime, endTime time.Time) (*model.MetricsSummary, error) {
+	return nil, nil
+}
+
+
 func TestPipeline_BatchFlushAndRedaction(t *testing.T) {
 	mockStore := &mockTraceStore{}
 	memLogs := storage.NewMemoryStore(100)

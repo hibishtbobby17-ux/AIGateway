@@ -19,19 +19,21 @@ var (
 // ServerRegistration holds configuration, health status, and active client handle
 // for a registered upstream MCP server.
 type ServerRegistration struct {
-	ID               string          `json:"id"`
-	TenantID         string          `json:"tenant_id"`
-	Name             string          `json:"name"`             // Unique slug per tenant (e.g. "github", "postgres")
-	NamespacePrefix  string          `json:"namespace_prefix"` // e.g. "github" -> "github::"
-	TransportType    string          `json:"transport_type"`   // "SSE", "HTTP_POST", "STDIO"
-	EndpointURL      string          `json:"endpoint_url"`
+	ID               string                        `json:"id"`
+	TenantID         string                        `json:"tenant_id"`
+	ProjectID        *string                       `json:"project_id,omitempty"`
+	Name             string                        `json:"name"`             // Unique slug per tenant (e.g. "github", "postgres")
+	NamespacePrefix  string                        `json:"namespace_prefix"` // e.g. "github" -> "github::"
+	TransportType    string                        `json:"transport_type"`   // "SSE", "HTTP_POST", "STDIO"
+	EndpointURL      string                        `json:"endpoint_url"`
+	Command          string                        `json:"command,omitempty"`
 	AuthHeader       string                        `json:"auth_header,omitempty"`
 	AuthConfig       delegation.UpstreamAuthConfig `json:"auth_config,omitempty"`
-	TimeoutMs        int             `json:"timeout_ms"`
-	ConcurrencyLimit int             `json:"concurrency_limit"`
-	HealthStatus     string          `json:"health_status"` // "HEALTHY", "DEGRADED", "UNHEALTHY"
-	CreatedAt        time.Time       `json:"created_at"`
-	Client           upstream.Client `json:"-"`
+	TimeoutMs        int                           `json:"timeout_ms"`
+	ConcurrencyLimit int                           `json:"concurrency_limit"`
+	HealthStatus     string                        `json:"health_status"` // "HEALTHY", "DEGRADED", "UNHEALTHY"
+	CreatedAt        time.Time                     `json:"created_at"`
+	Client           upstream.Client               `json:"-"`
 }
 
 // Registry manages upstream server registrations.
@@ -41,6 +43,7 @@ type Registry interface {
 	GetServerByName(ctx context.Context, tenantID, name string) (*ServerRegistration, error)
 	ListServers(ctx context.Context, tenantID string) ([]*ServerRegistration, error)
 	UpdateHealth(ctx context.Context, tenantID, serverID, status string) error
+	UpdateServer(ctx context.Context, s *ServerRegistration) error
 	RemoveServer(ctx context.Context, tenantID, serverID string) error
 }
 
@@ -140,6 +143,34 @@ func (r *MemoryRegistry) UpdateHealth(ctx context.Context, tenantID, serverID, s
 	return nil
 }
 
+func (r *MemoryRegistry) UpdateServer(ctx context.Context, s *ServerRegistration) error {
+	if s == nil || s.TenantID == "" || s.ID == "" {
+		return fmt.Errorf("tenant_id and id are required")
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	key := s.TenantID + ":" + s.ID
+	existing, ok := r.servers[key]
+	if !ok {
+		return ErrServerNotFound
+	}
+
+	for _, other := range r.servers {
+		if other.TenantID == s.TenantID && other.Name == s.Name && other.ID != s.ID {
+			return ErrDuplicateServerName
+		}
+	}
+
+	s.CreatedAt = existing.CreatedAt
+	if s.Client == nil {
+		s.Client = existing.Client
+	}
+	r.servers[key] = s
+	return nil
+}
+
 func (r *MemoryRegistry) RemoveServer(ctx context.Context, tenantID, serverID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -155,3 +186,4 @@ func (r *MemoryRegistry) RemoveServer(ctx context.Context, tenantID, serverID st
 	delete(r.servers, key)
 	return nil
 }
+

@@ -181,3 +181,74 @@ func (r *SQLRepository) ListRules(ctx context.Context, tenantID string) ([]*Rule
 	}
 	return rules, rows.Err()
 }
+
+// GetRule fetches a single policy rule by tenant and ID.
+func (r *SQLRepository) GetRule(ctx context.Context, tenantID, ruleID string) (*Rule, error) {
+	if tenantID == "" || ruleID == "" {
+		return nil, errors.New("tenant_id and rule_id are required")
+	}
+
+	query := `
+		SELECT id, tenant_id, name, effect, actions, resources, roles, required_scopes, conditions
+		FROM policies
+		WHERE tenant_id = $1 AND id = $2
+	`
+	var (
+		rule                       Rule
+		effect, actions, resources string
+		roles, requiredScopes      string
+		conditions                 sql.NullString
+	)
+	err := r.db.QueryRowContext(ctx, query, tenantID, ruleID).Scan(
+		&rule.ID, &rule.TenantID, &rule.Name, &effect, &actions, &resources,
+		&roles, &requiredScopes, &conditions,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("policy rule not found")
+		}
+		return nil, fmt.Errorf("scan policy %s: %w", ruleID, err)
+	}
+
+	rule.Effect = Effect(effect)
+	if err := decodePolicyField(rule.ID, "actions", actions, &rule.Actions); err != nil {
+		return nil, err
+	}
+	if err := decodePolicyField(rule.ID, "resources", resources, &rule.Resources); err != nil {
+		return nil, err
+	}
+	if err := decodePolicyField(rule.ID, "roles", roles, &rule.Roles); err != nil {
+		return nil, err
+	}
+	if err := decodePolicyField(rule.ID, "required_scopes", requiredScopes, &rule.RequiredScopes); err != nil {
+		return nil, err
+	}
+	if conditions.Valid && conditions.String != "" {
+		if err := decodePolicyField(rule.ID, "conditions", conditions.String, &rule.Conditions); err != nil {
+			return nil, err
+		}
+	}
+	return &rule, nil
+}
+
+// DeleteRule removes a policy rule scoped to a specific tenant.
+func (r *SQLRepository) DeleteRule(ctx context.Context, tenantID, ruleID string) error {
+	if tenantID == "" || ruleID == "" {
+		return errors.New("tenant_id and rule_id are required")
+	}
+
+	query := `DELETE FROM policies WHERE tenant_id = $1 AND id = $2`
+	res, err := r.db.ExecContext(ctx, query, tenantID, ruleID)
+	if err != nil {
+		return fmt.Errorf("delete policy rule: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("check deleted rows: %w", err)
+	}
+	if n == 0 {
+		return errors.New("policy rule not found")
+	}
+	return nil
+}
+

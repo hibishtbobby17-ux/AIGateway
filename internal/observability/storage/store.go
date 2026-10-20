@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,6 +34,7 @@ type LogFilter struct {
 	TenantID  string
 	TraceID   string
 	Severity  string
+	Query     string
 	StartTime time.Time
 	EndTime   time.Time
 	Limit     int
@@ -43,6 +45,9 @@ type TraceStore interface {
 	StoreSpans(ctx context.Context, spans []*model.Span) error
 	QuerySpans(ctx context.Context, filter TraceFilter) ([]*model.Span, error)
 	GetTrace(ctx context.Context, tenantID, traceID string) ([]*model.Span, error)
+	GetTraceSummaries(ctx context.Context, filter TraceFilter) ([]*model.TraceSummary, error)
+	GetObservedTopology(ctx context.Context, tenantID string, startTime, endTime time.Time) (*model.ObservedTopology, error)
+	GetMetricsSummary(ctx context.Context, tenantID string, startTime, endTime time.Time) (*model.MetricsSummary, error)
 }
 
 // LogStore persists and queries structured logs.
@@ -208,6 +213,45 @@ func (s *SQLTraceStore) GetTrace(ctx context.Context, tenantID, traceID string) 
 	return spans, nil
 }
 
+func (s *SQLTraceStore) GetTraceSummaries(ctx context.Context, filter TraceFilter) ([]*model.TraceSummary, error) {
+	if filter.Limit <= 0 {
+		filter.Limit = 100
+	}
+	spans, err := s.QuerySpans(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	return ComputeTraceSummaries(spans), nil
+}
+
+func (s *SQLTraceStore) GetObservedTopology(ctx context.Context, tenantID string, startTime, endTime time.Time) (*model.ObservedTopology, error) {
+	filter := TraceFilter{
+		TenantID:  tenantID,
+		StartTime: startTime,
+		EndTime:   endTime,
+		Limit:     1000,
+	}
+	spans, err := s.QuerySpans(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	return ComputeObservedTopology(tenantID, startTime, endTime, spans), nil
+}
+
+func (s *SQLTraceStore) GetMetricsSummary(ctx context.Context, tenantID string, startTime, endTime time.Time) (*model.MetricsSummary, error) {
+	filter := TraceFilter{
+		TenantID:  tenantID,
+		StartTime: startTime,
+		EndTime:   endTime,
+		Limit:     1000,
+	}
+	spans, err := s.QuerySpans(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	return ComputeMetricsSummary(tenantID, startTime, endTime, spans), nil
+}
+
 func scanSpan(scanner interface{ Scan(...any) error }) (*model.Span, error) {
 	var s model.Span
 	var parentID sql.NullString
@@ -319,6 +363,12 @@ func (s *SQLLogStore) QueryLogs(ctx context.Context, filter LogFilter) ([]*model
 		query += fmt.Sprintf(" AND severity = $%d", argIdx)
 		args = append(args, filter.Severity)
 		argIdx++
+	}
+	if filter.Query != "" {
+		query += fmt.Sprintf(" AND (message LIKE $%d OR attributes LIKE $%d)", argIdx, argIdx+1)
+		likePattern := "%" + filter.Query + "%"
+		args = append(args, likePattern, likePattern)
+		argIdx += 2
 	}
 	if !filter.StartTime.IsZero() {
 		query += fmt.Sprintf(" AND timestamp >= $%d", argIdx)
@@ -439,6 +489,54 @@ func (m *MemoryStore) GetTrace(ctx context.Context, tenantID, traceID string) ([
 	return traceSpans, nil
 }
 
+func (m *MemoryStore) GetTraceSummaries(ctx context.Context, filter TraceFilter) ([]*model.TraceSummary, error) {
+	spans, err := m.QuerySpans(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	return ComputeTraceSummaries(spans), nil
+}
+
+func (m *MemoryStore) GetObservedTopology(ctx context.Context, tenantID string, startTime, endTime time.Time) (*model.ObservedTopology, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var matchingSpans []*model.Span
+	for _, s := range m.spans {
+		if s.TenantID != tenantID {
+			continue
+		}
+		if !startTime.IsZero() && s.StartTime.Before(startTime) {
+			continue
+		}
+		if !endTime.IsZero() && s.EndTime.After(endTime) {
+			continue
+		}
+		matchingSpans = append(matchingSpans, s)
+	}
+	return ComputeObservedTopology(tenantID, startTime, endTime, matchingSpans), nil
+}
+
+func (m *MemoryStore) GetMetricsSummary(ctx context.Context, tenantID string, startTime, endTime time.Time) (*model.MetricsSummary, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var matchingSpans []*model.Span
+	for _, s := range m.spans {
+		if s.TenantID != tenantID {
+			continue
+		}
+		if !startTime.IsZero() && s.StartTime.Before(startTime) {
+			continue
+		}
+		if !endTime.IsZero() && s.EndTime.After(endTime) {
+			continue
+		}
+		matchingSpans = append(matchingSpans, s)
+	}
+	return ComputeMetricsSummary(tenantID, startTime, endTime, matchingSpans), nil
+}
+
 func (m *MemoryStore) StoreLogs(ctx context.Context, logs []*model.LogRecord) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -468,6 +566,15 @@ func (m *MemoryStore) QueryLogs(ctx context.Context, filter LogFilter) ([]*model
 		if filter.Severity != "" && l.Severity != filter.Severity {
 			continue
 		}
+		if filter.Query != "" && !strings.Contains(strings.ToLower(l.Message), strings.ToLower(filter.Query)) {
+			continue
+		}
+		if !filter.StartTime.IsZero() && l.Timestamp.Before(filter.StartTime) {
+			continue
+		}
+		if !filter.EndTime.IsZero() && l.Timestamp.After(filter.EndTime) {
+			continue
+		}
 		result = append(result, l)
 		if filter.Limit > 0 && len(result) >= filter.Limit {
 			break
@@ -475,3 +582,4 @@ func (m *MemoryStore) QueryLogs(ctx context.Context, filter LogFilter) ([]*model
 	}
 	return result, nil
 }
+

@@ -19,6 +19,8 @@ const (
 	ActionPolicyDelete   = "admin.policy.delete"
 	ActionServerRegister = "admin.server.register"
 	ActionServerRemove   = "admin.server.remove"
+	ActionAgentRegister  = "admin.agent.register"
+	ActionAgentRemove    = "admin.agent.remove"
 	ActionTokenRevoke    = "oauth.token.revoke"
 	ActionAccessDenied   = "security.access_denied"
 	ActionTenantCreate   = "admin.tenant.create"

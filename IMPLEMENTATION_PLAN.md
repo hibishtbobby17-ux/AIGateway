@@ -311,33 +311,33 @@ Acceptance criteria
 - [x] Buffering and memory usage remain bounded during backend outages.
 10. Milestone 6: Topology and console
 Tasks
-Create a React/TypeScript web frontend and tenant-aware console authentication.
-Implement authenticated management APIs for tenant-scoped registry, connection, gateway, and policy configuration.
-Build workflows to register, edit, enable/disable, validate, and inspect MCP servers and A2A agents, including connection health and actionable errors.
-Build server and agent detail views with configuration and relevant status.
-Build an interactive configured topology graph showing registered MCP servers, agents, and configured connections.
-Build an observed interaction graph showing actual MCP tool calls and A2A communications, with time-range and tenant/environment filters.
-Clearly distinguish configured relationships from observed telemetry and link graph nodes/edges to relevant details, tool calls, tasks, and traces.
-Add trace search and waterfall visualization.
-Add correlated log search.
-Add metrics charts and time-range filtering.
-Add MCP invocation and A2A task details.
-Add audit and health views.
-Implement pagination, query limits, loading, empty, success, and error states; never show mock data as live state.
-Ensure administrative configuration changes are backend-validated, authorized, tenant-scoped, and audited where security-relevant.
-Add frontend unit/component tests and end-to-end smoke tests for key management and graph workflows.
-Document and automate a local frontend/backend workflow that can exercise server/agent configuration and configured-versus-observed graph behavior against actual service or telemetry data.
+- [x] Create a React/TypeScript web frontend and tenant-aware console authentication.
+- [x] Implement authenticated management APIs for tenant-scoped registry, connection, gateway, and policy configuration.
+- [x] Build workflows to register, edit, enable/disable, validate, and inspect MCP servers and A2A agents, including connection health and actionable errors.
+- [x] Build server and agent detail views with configuration and relevant status.
+- [x] Build an interactive configured topology graph showing registered MCP servers, agents, and configured connections.
+- [x] Build an observed interaction graph showing actual MCP tool calls and A2A communications, with time-range and tenant/environment filters.
+- [x] Clearly distinguish configured relationships from observed telemetry and link graph nodes/edges to relevant details, tool calls, tasks, and traces.
+- [x] Add trace search and waterfall visualization.
+- [x] Add correlated log search.
+- [x] Add metrics charts and time-range filtering.
+- [x] Add MCP invocation and A2A task details.
+- [x] Add audit and health views.
+- [x] Implement pagination, query limits, loading, empty, success, and error states; never show mock data as live state.
+- [x] Ensure administrative configuration changes are backend-validated, authorized, tenant-scoped, and audited where security-relevant.
+- [x] Add frontend unit/component tests and end-to-end smoke tests for key management and graph workflows.
+- [x] Document and automate a local frontend/backend workflow that can exercise server/agent configuration and configured-versus-observed graph behavior against actual service or telemetry data (`docs/console/console-guide.md`).
 Acceptance criteria
-Authorized users can configure and inspect tenants, MCP servers, agents, upstream connections, and policies through the frontend and management APIs.
-Configuration submitted through the frontend is validated and persisted by the backend, with errors shown clearly and sensitive values not exposed.
-The console displays actual backend and telemetry data rather than placeholders.
-Configured and observed topology are visually and semantically distinguishable.
-Observed graph edges represent actual interactions in the selected time range and link to corresponding details where available.
-Users cannot query or modify another tenant's configuration or telemetry.
-Trace details can be correlated with associated logs.
-The UI handles loading, empty results, and backend errors correctly.
-Frontend tests and end-to-end smoke tests cover the principal management and visualization flows.
-The documented local development workflow starts dependencies, applies migrations, runs services and tests, and verifies key frontend and MCP/A2A flows without relying on production infrastructure.
+- [x] Authorized users can configure and inspect tenants, MCP servers, agents, upstream connections, and policies through the frontend and management APIs.
+- [x] Configuration submitted through the frontend is validated and persisted by the backend, with errors shown clearly and sensitive values not exposed.
+- [x] The console displays actual backend and telemetry data rather than placeholders.
+- [x] Configured and observed topology are visually and semantically distinguishable.
+- [x] Observed graph edges represent actual interactions in the selected time range and link to corresponding details where available.
+- [x] Users cannot query or modify another tenant's configuration or telemetry.
+- [x] Trace details can be correlated with associated logs.
+- [x] The UI handles loading, empty results, and backend errors correctly.
+- [x] Frontend tests and end-to-end smoke tests cover the principal management and visualization flows.
+- [x] The documented local development workflow starts dependencies, applies migrations, runs services and tests, and verifies key frontend and MCP/A2A flows without relying on production infrastructure.
 11. Milestone 7: Resilience and production hardening
 Tasks
 Add bounded concurrency and backpressure.
@@ -410,14 +410,14 @@ Maintain this checklist at the end of every coding session:
 
 | Field | Current Status |
 | :--- | :--- |
-| **Current milestone** | Milestone 5: Observability pipeline (complete); preparing Milestone 6: Topology and console |
-| **Completed tasks** | Milestones 0, 1, 2, 3, 4, and 5 are complete and verified. Milestone 5 implements the complete OpenTelemetry observability pipeline: W3C Trace Context propagation; inbound HTTP server spans with status codes and tenant attribution; outbound traceparent injection; domain models for spans, logs, and metrics; recursive data redaction for sensitive fields and authorization headers; asynchronous bounded ring buffer with non-blocking load shedding under overload; ratio and error sampling; batch storage workers for SQL (`telemetry_spans`, `telemetry_logs`) and in-memory ring buffers; Prometheus-compatible `/metrics` scrape endpoint; standard OTLP/HTTP ingestion endpoints (`/v1/traces`, `/v1/logs`, `/v1/metrics`) with tenant attribution; developer instrumentation guides with examples for Go, Python, TypeScript, and Java; and comprehensive end-to-end integration tests. |
-| **In progress** | None (Milestone 5 complete). |
+| **Current milestone** | Milestone 6: Topology and console (complete); preparing Milestone 7: Resilience and production hardening |
+| **Completed tasks** | Milestones 0, 1, 2, 3, 4, 5, and 6 are complete and verified. Milestone 6 implements: full React/TypeScript management console with sleek dark mode and micro-animations; native Go binary asset embedding via `web.Handler()` (`web/embed.go`); authenticated and role-guarded management APIs (`/api/v1/mcp-servers`, `/api/v1/agents`, `/api/v1/topology/configured`, `/api/v1/topology/observed`, `/api/v1/traces`, `/api/v1/logs`, `/api/v1/metrics/summary`, `/api/v1/a2a/tasks`, `/api/v1/mcp/invocations`, `/api/v1/policies`, `/api/v1/policies/dry-run`, `/api/v1/audit`); interactive SVG topology graph with configured vs observed views; distributed trace waterfall visualizer; correlated structured log search; live upstream MCP and A2A health probing; policy dry-run simulation engine; strict multi-tenant isolation; and comprehensive end-to-end integration tests. |
+| **In progress** | None (Milestone 6 complete). |
 | **Blocked** | None. |
-| **Tests executed** | `go test ./...` and `go vet ./...` passed across all packages with 0 errors, including all new telemetry, tracing, OTLP ingestion, pipeline, and end-to-end integration tests. |
+| **Tests executed** | `go test ./...` and `go vet ./...` passed across all packages with 0 errors, including `tests/integration/console_admin_test.go`, all admin unit tests, observability tests, and A2A/MCP gateway tests. |
 | **Known defects** | Production key-encryption secret provisioning via cloud secret managers and automated old-key retirement policy are documented for future milestones. Resource servers require shared SQL availability for revocation checks. |
-| **Architectural decisions** | ADR-0001 through ADR-0009 active. Pinned MCP version 2024-11-05. Pinned A2A protocol version `a2a/v1`. OpenTelemetry OTLP/HTTP and Prometheus standard metrics. |
-| **Next task** | Begin Milestone 6: Topology and console (React/TypeScript console, configured vs observed topology graph, trace search and waterfall view, correlated log search, and management APIs). |
+| **Architectural decisions** | ADR-0001 through ADR-0009 active. Pinned MCP version 2024-11-05. Pinned A2A protocol version `a2a/v1`. Native Go embedded console distribution. |
+| **Next task** | Begin Milestone 7: Resilience and production hardening (bounded concurrency, backpressure, exponential retries, circuit breakers, bulkheads, rate limits, request-size limits, graceful draining, failure injection, and load tests). |
 
 15. First action
 
