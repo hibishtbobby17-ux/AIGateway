@@ -41,6 +41,7 @@ type UserRepository interface {
 	Authenticate(ctx context.Context, tenantID, username, password string) (*User, error)
 	GetUserByID(ctx context.Context, tenantID, id string) (*User, error)
 	GetUserByUsername(ctx context.Context, tenantID, username string) (*User, error)
+	GetUserByUsernameGlobal(ctx context.Context, username string) (*User, error)
 }
 
 // SQLUserRepository implements UserRepository with SQL storage and bcrypt hashing.
@@ -118,7 +119,13 @@ func (r *SQLUserRepository) CreateUser(ctx context.Context, u *User, rawPassword
 
 // Authenticate verifies the user's password against the stored bcrypt hash.
 func (r *SQLUserRepository) Authenticate(ctx context.Context, tenantID, username, password string) (*User, error) {
-	user, err := r.GetUserByUsername(ctx, tenantID, username)
+	var user *User
+	var err error
+	if tenantID == "" {
+		user, err = r.GetUserByUsernameGlobal(ctx, username)
+	} else {
+		user, err = r.GetUserByUsername(ctx, tenantID, username)
+	}
 	if err != nil {
 		return nil, ErrInvalidCredentials
 	}
@@ -175,6 +182,32 @@ func (r *SQLUserRepository) GetUserByUsername(ctx context.Context, tenantID, use
 			return nil, ErrUserNotFound
 		}
 		return nil, fmt.Errorf("query user by username: %w", err)
+	}
+
+	if rolesStr != "" {
+		_ = json.Unmarshal([]byte(rolesStr), &u.Roles)
+	}
+	return &u, nil
+}
+
+// GetUserByUsernameGlobal retrieves a user by username across all tenants.
+func (r *SQLUserRepository) GetUserByUsernameGlobal(ctx context.Context, username string) (*User, error) {
+	query := `
+	SELECT id, tenant_id, username, email, password_hash, roles, active, created_at, updated_at
+	FROM users
+	WHERE username = $1
+	LIMIT 1`
+
+	var u User
+	var rolesStr string
+	err := r.db.QueryRowContext(ctx, query, username).Scan(
+		&u.ID, &u.TenantID, &u.Username, &u.Email, &u.PasswordHash, &rolesStr, &u.Active, &u.CreatedAt, &u.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrUserNotFound
+		}
+		return nil, fmt.Errorf("query user by username global: %w", err)
 	}
 
 	if rolesStr != "" {

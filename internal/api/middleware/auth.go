@@ -88,13 +88,19 @@ func AuthMiddleware(verifier *tokens.Verifier, engine *policy.Engine) func(http.
 				return
 			}
 
+			tokenStr := ""
 			authHeader := r.Header.Get("Authorization")
-			if authHeader == "" || !strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
-				writeAuthError(w, http.StatusUnauthorized, "missing or malformed Authorization header (expected 'Bearer <token>')")
+			if authHeader != "" && strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+				tokenStr = strings.TrimSpace(authHeader[7:])
+			} else if cookie, err := r.Cookie("gateway_console_session"); err == nil && cookie.Value != "" {
+				tokenStr = strings.TrimSpace(cookie.Value)
+			}
+
+			if tokenStr == "" {
+				writeAuthError(w, http.StatusUnauthorized, "missing or malformed Authorization header (expected 'Bearer <token>') or session cookie")
 				return
 			}
 
-			tokenStr := strings.TrimSpace(authHeader[7:])
 			claims, err := verifier.VerifyContext(r.Context(), tokenStr)
 			if err != nil {
 				if errors.Is(err, tokens.ErrRevocationCheck) || errors.Is(err, tokens.ErrRevocationStore) {
@@ -151,7 +157,7 @@ func isPublicEndpoint(p string) bool {
 	if strings.HasPrefix(p, "/.well-known/") {
 		return true
 	}
-	if p == "/oauth/token" || p == "/oauth/revoke" || p == "/login" {
+	if p == "/oauth/token" || p == "/oauth/revoke" || p == "/login" || p == "/api/v1/auth/login" {
 		return true
 	}
 	if strings.HasPrefix(p, "/v1/") {

@@ -223,3 +223,16 @@ export interface Project {
   slug: string;
   created_at: string;
 }
+
+export interface UserProfile {
+  id: string;
+  username: string;
+  email: string;
+  tenant_id: string;
+  roles: string[];
+}
+
+export interface LoginResponse {
+  token: string;
+  user: UserProfile;
+}

@@ -43,7 +43,7 @@ func NewSQLStore(db *sql.DB, hasher fosite.Hasher) (*SQLStore, error) {
 		return nil, errors.New("oauth SQL store requires a database")
 	}
 	if hasher == nil {
-		return nil, errors.New("oauth SQL store requires a client secret hasher")
+		hasher = (&fosite.Config{HashCost: 10}).GetSecretsHasher(context.Background())
 	}
 	return &SQLStore{db: db, hasher: hasher}, nil
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -11,6 +12,7 @@ import (
 	a2aprotocol "project_alpha/internal/a2a/protocol"
 	a2aregistry "project_alpha/internal/a2a/registry"
 	"project_alpha/internal/config"
+	"project_alpha/internal/identity/idp"
 	"project_alpha/internal/identity/keys"
 	"project_alpha/internal/identity/tokens"
 	mcpregistry "project_alpha/internal/mcp/registry"
@@ -79,6 +81,21 @@ func main() {
 		Status: "ACTIVE",
 		Tier:   "standard",
 	})
+
+	// Ensure default administrator user account exists
+	userRepo, _ := idp.NewSQLUserRepository(db, 10)
+	if userRepo != nil {
+		if _, err := userRepo.GetUserByUsername(ctx, tenantID, "admin"); errors.Is(err, idp.ErrUserNotFound) {
+			_ = userRepo.CreateUser(ctx, &idp.User{
+				TenantID: tenantID,
+				Username: "admin",
+				Email:    "admin@gateway.local",
+				Roles:    []string{"platform-admin", "tenant-admin", "auditor"},
+				Active:   true,
+			}, "admin123")
+			fmt.Println("[+] Provisioned default console administrator: admin / admin123")
+		}
+	}
 
 	// 3. Ensure sample MCP server exists
 	mcpReg := mcpregistry.NewSQLRegistry(db)

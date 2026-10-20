@@ -8,6 +8,8 @@ import (
 	"project_alpha/internal/a2a/tasks"
 	"project_alpha/internal/api/middleware"
 	"project_alpha/internal/audit"
+	"project_alpha/internal/identity/idp"
+	"project_alpha/internal/identity/keys"
 	"project_alpha/internal/identity/principal"
 	mcpregistry "project_alpha/internal/mcp/registry"
 	obsstorage "project_alpha/internal/observability/storage"
@@ -27,6 +29,10 @@ type Config struct {
 	LogStore     obsstorage.LogStore
 	PolicyEngine *policy.Engine
 	HTTPClient   *http.Client
+	UserRepo     idp.UserRepository
+	KeyManager   *keys.Manager
+	JWTIssuer    string
+	JWTAudience  string
 }
 
 // Handler serves administrative Control Plane REST APIs.
@@ -41,6 +47,10 @@ type Handler struct {
 	logStore     obsstorage.LogStore
 	policyEngine *policy.Engine
 	httpClient   *http.Client
+	userRepo     idp.UserRepository
+	keyManager   *keys.Manager
+	jwtIssuer    string
+	jwtAudience  string
 }
 
 // NewHandler creates a new administrative API handler with core repositories.
@@ -69,12 +79,17 @@ func NewHandlerWithConfig(cfg Config) *Handler {
 		logStore:     cfg.LogStore,
 		policyEngine: cfg.PolicyEngine,
 		httpClient:   client,
+		userRepo:     cfg.UserRepo,
+		keyManager:   cfg.KeyManager,
+		jwtIssuer:    cfg.JWTIssuer,
+		jwtAudience:  cfg.JWTAudience,
 	}
 }
 
 // RegisterRoutes registers all tenant-scoped administrative endpoints onto the provided multiplexer.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/audit", h.HandleGetAudit)
+	mux.HandleFunc("/api/v1/auth/me", h.HandleMe)
 	mux.HandleFunc("/api/v1/tenants", h.HandleGetTenant)
 	mux.HandleFunc("/api/v1/projects", h.HandleProjects)
 	mux.HandleFunc("/api/v1/mcp-servers", h.HandleMCPServers)

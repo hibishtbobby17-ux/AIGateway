@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
 import { api } from '../api/client';
+import { UserProfile } from '../types';
 
 interface Props {
   activeTab: string;
   onTabChange: (tab: string) => void;
   tenantId: string;
   onTenantChange: (tenantId: string) => void;
+  currentUser?: UserProfile | null;
+  onLogout?: () => void;
 }
 
-export const Navbar: React.FC<Props> = ({ activeTab, onTabChange, tenantId, onTenantChange }) => {
+export const Navbar: React.FC<Props> = ({ activeTab, onTabChange, tenantId, onTenantChange, currentUser, onLogout }) => {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [tokenInput, setTokenInput] = useState(api.getToken());
 
@@ -60,14 +63,45 @@ export const Navbar: React.FC<Props> = ({ activeTab, onTabChange, tenantId, onTe
             </select>
           </div>
 
-          {/* Auth Token Button */}
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={() => setIsAuthModalOpen(true)}
-            title="Configure Bearer JWT Token"
-          >
-            🔑 {api.getToken() ? 'Token Active' : 'Set Auth Token'}
-          </button>
+          {/* Logged in User Profile Badge */}
+          {currentUser && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.45rem',
+              background: 'var(--bg-surface)',
+              padding: '0.35rem 0.65rem',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--border-subtle)',
+              fontSize: '0.8125rem'
+            }}>
+              <span style={{ color: 'var(--cyan)' }}>👤</span>
+              <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{currentUser.username}</span>
+              <span style={{
+                background: 'var(--primary-glow)',
+                color: '#fff',
+                fontSize: '0.7rem',
+                padding: '0.1rem 0.4rem',
+                borderRadius: '4px',
+                fontWeight: 600
+              }}>
+                {currentUser.roles?.[0] || 'admin'}
+              </span>
+            </div>
+          )}
+
+          {/* Sign Out Button */}
+          {onLogout && (
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={onLogout}
+              title="Sign out of Console"
+              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+            >
+              <span>🚪</span>
+              <span>Sign Out</span>
+            </button>
+          )}
 
           {/* Health Indicator */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', color: 'var(--success)' }}>

@@ -13,6 +13,8 @@ import {
   DryRunResponse,
   AuditEvent,
   Project,
+  UserProfile,
+  LoginResponse,
 } from '../types';
 
 export class ApiClient {
@@ -54,7 +56,7 @@ export class ApiClient {
       headers.set('Authorization', `Bearer ${this.token}`);
     }
 
-    const res = await fetch(url, { ...options, headers });
+    const res = await fetch(url, { ...options, headers, credentials: 'include' });
     if (!res.ok) {
       let errMsg = `Request failed: HTTP ${res.status}`;
       try {
@@ -64,6 +66,43 @@ export class ApiClient {
       throw new Error(errMsg);
     }
     return res.json();
+  }
+
+  // Authentication
+  async login(username: string, password: string, tenantId?: string): Promise<LoginResponse> {
+    const res = await this.request<LoginResponse>('/api/v1/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password, tenant_id: tenantId }),
+    });
+    if (res.token) {
+      this.setToken(res.token);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('gateway_token', res.token);
+      }
+    }
+    if (res.user && typeof window !== 'undefined') {
+      localStorage.setItem('gateway_user', JSON.stringify(res.user));
+    }
+    return res;
+  }
+
+  async logout(): Promise<{ status: string }> {
+    try {
+      await this.request<{ status: string }>('/api/v1/auth/logout', {
+        method: 'POST',
+      });
+    } finally {
+      this.setToken('');
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('gateway_token');
+        localStorage.removeItem('gateway_user');
+      }
+    }
+    return { status: 'logged_out' };
+  }
+
+  getMe(): Promise<UserProfile> {
+    return this.request<UserProfile>('/api/v1/auth/me');
   }
 
   // Topology

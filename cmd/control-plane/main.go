@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"project_alpha/internal/api/middleware"
 	"project_alpha/internal/audit"
 	"project_alpha/internal/config"
+	"project_alpha/internal/identity/idp"
 	"project_alpha/internal/identity/keys"
 	"project_alpha/internal/identity/tokens"
 	mcpregistry "project_alpha/internal/mcp/registry"
@@ -25,6 +27,7 @@ import (
 	obsstorage "project_alpha/internal/observability/storage"
 	"project_alpha/internal/policy"
 	"project_alpha/internal/storage"
+	"project_alpha/internal/tenants"
 	"project_alpha/web"
 )
 
@@ -114,6 +117,40 @@ func main() {
 	traceStore := obsstorage.NewSQLTraceStore(db)
 	logStore := obsstorage.NewSQLLogStore(db)
 
+	userRepo, err := idp.NewSQLUserRepository(db, 10)
+	if err != nil {
+		logger.Error("user repository initialization failed", "error", err)
+		os.Exit(1)
+	}
+
+	// Ensure default admin user and tenant exist for immediate login
+	bootstrapCtx, cancelBootstrap := context.WithTimeout(context.Background(), 5*time.Second)
+	defaultTenantID := "tenant-1"
+	if t, err := tenantsRepo.GetTenantByID(bootstrapCtx, defaultTenantID); err != nil || t == nil {
+		_ = tenantsRepo.CreateTenant(bootstrapCtx, &tenants.Tenant{
+			ID:     defaultTenantID,
+			Name:   "Acme AI Labs",
+			Slug:   "acme-ai",
+			Status: "ACTIVE",
+			Tier:   "enterprise",
+		})
+	}
+	if _, err := userRepo.GetUserByUsernameGlobal(bootstrapCtx, "admin"); errors.Is(err, idp.ErrUserNotFound) {
+		adminPass := os.Getenv("GATEWAY_ADMIN_PASSWORD")
+		if adminPass == "" {
+			adminPass = "admin123"
+		}
+		_ = userRepo.CreateUser(bootstrapCtx, &idp.User{
+			TenantID: defaultTenantID,
+			Username: "admin",
+			Email:    "admin@gateway.local",
+			Roles:    []string{"platform-admin", "tenant-admin", "auditor"},
+			Active:   true,
+		}, adminPass)
+		logger.Info("bootstrapped default console administrator", "username", "admin", "tenant_id", defaultTenantID)
+	}
+	cancelBootstrap()
+
 	adminHandler := admin.NewHandlerWithConfig(admin.Config{
 		Recorder:     auditRecorder,
 		PolicyRepo:   policyRepo,
@@ -124,6 +161,10 @@ func main() {
 		TraceStore:   traceStore,
 		LogStore:     logStore,
 		PolicyEngine: policyEngine,
+		UserRepo:     userRepo,
+		KeyManager:   keyManager,
+		JWTIssuer:    cfg.Security.JWTIssuer,
+		JWTAudience:  cfg.Security.JWTAudience,
 	})
 
 	// 6. Admin API router
@@ -140,6 +181,10 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"service":"control-plane","status":"healthy"}`))
 	})
+
+	// Public authentication endpoints for Console login
+	mux.HandleFunc("/api/v1/auth/login", adminHandler.HandleLogin)
+	mux.HandleFunc("/api/v1/auth/logout", adminHandler.HandleLogout)
 
 	// Authenticated & role-guarded administrative endpoints
 	adminMux := http.NewServeMux()
