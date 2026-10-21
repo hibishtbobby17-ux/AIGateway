@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
 
     const insRes = await pool.query(`
       INSERT INTO projects (org_id, name, slug, status, settings, config_version)
-      VALUES ($1, $2, $3, 'active', $4, 1)
+      VALUES ($1, $2, $3, 'active', $4, (SELECT COALESCE(MAX(config_version), 0) + 1 FROM projects))
       RETURNING id, org_id, name, slug, status, settings, config_version, created_at, updated_at
     `, [session.orgId, name.trim(), cleanSlug, JSON.stringify(settings || {})]);
 

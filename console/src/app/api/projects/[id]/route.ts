@@ -74,7 +74,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
         name = COALESCE($1, name),
         status = COALESCE($2, status),
         settings = COALESCE($3, settings),
-        config_version = config_version + 1,
+        config_version = (SELECT COALESCE(MAX(config_version), 0) + 1 FROM projects),
         updated_at = NOW()
       WHERE id = $4 AND org_id = $5
       RETURNING id, org_id, name, slug, status, settings, config_version, updated_at

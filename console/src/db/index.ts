@@ -145,6 +145,7 @@ export async function initDatabase(): Promise<void> {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_gateway_instances_name ON gateway_instances(name);
     `);
 
     // 9. Gateway Project Bindings
@@ -231,6 +232,17 @@ export async function initDatabase(): Promise<void> {
         INSERT INTO projects (org_id, name, slug, status, settings, config_version)
         VALUES ($1, 'Production Gateway', 'production', 'active', '{"rate_limit": 1000}', 1)
       `, [defaultOrgId]);
+    }
+
+    // Seed default gateway instance if empty
+    const gwRes = await client.query('SELECT id FROM gateway_instances WHERE name = $1', ['gateway-default-01']);
+    if (gwRes.rows.length === 0) {
+      const salt = await bcrypt.genSalt(10);
+      const secretHash = await bcrypt.hash('dev-gateway-secret', salt);
+      await client.query(`
+        INSERT INTO gateway_instances (name, secret_hash, status, version)
+        VALUES ('gateway-default-01', $1, 'registered', '1.0.0')
+      `, [secretHash]);
     }
 
     await client.query('COMMIT');

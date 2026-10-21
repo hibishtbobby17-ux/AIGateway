@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -19,40 +21,52 @@ import (
 )
 
 type GatewayConfig struct {
-	Version      int                 `json:"config_version"`
-	Projects     map[string]Project  `json:"projects"`
-	UpdatedAt    string              `json:"updated_at"`
+	Version   int                `json:"config_version"`
+	Projects  map[string]Project `json:"projects"`
+	UpdatedAt string             `json:"generated_at"`
 }
 
 type Project struct {
-	ID        string      `json:"id"`
-	Slug      string      `json:"slug"`
-	Name      string      `json:"name"`
-	Status    string      `json:"status"`
-	Servers   []MCPServer `json:"servers,omitempty"`
+	ID            string      `json:"id"`
+	Slug          string      `json:"slug"`
+	Name          string      `json:"name"`
+	Status        string      `json:"status"`
+	Settings      interface{} `json:"settings"`
+	ConfigVersion int         `json:"config_version"`
+	Servers       []MCPServer `json:"servers,omitempty"`
 }
 
 type MCPServer struct {
-	ID              string `json:"id"`
-	Name            string `json:"name"`
-	NamespacePrefix string `json:"namespace_prefix"`
-	Transport       string `json:"transport"`
-	URL             string `json:"url"`
-	AuthType        string `json:"auth_type"`
-	Enabled         bool   `json:"enabled"`
+	ID              string       `json:"id"`
+	Name            string       `json:"name"`
+	NamespacePrefix string       `json:"namespace_prefix"`
+	Transport       string       `json:"transport"`
+	URL             string       `json:"url"`
+	AuthType        string       `json:"auth_type"`
+	Enabled         bool         `json:"enabled"`
+	ToolPolicies    []ToolPolicy `json:"tool_policies,omitempty"`
+}
+
+type ToolPolicy struct {
+	ToolName string  `json:"tool_name"`
+	Enabled  bool    `json:"enabled"`
+	Rename   *string `json:"rename"`
 }
 
 type Gateway struct {
-	configPath   string
-	consoleURL   string
+	configPath    string
+	consoleURL    string
 	gatewaySecret string
-	gatewayID    string
-	ingestURL    string
-	currentCfg   atomic.Pointer[GatewayConfig]
-	logger       *slog.Logger
-	httpClient   *http.Client
-	mu           sync.RWMutex
-	token        string
+	gatewayID     string
+	ingestURL     string
+	currentCfg    atomic.Pointer[GatewayConfig]
+	logger        *slog.Logger
+	httpClient    *http.Client
+	pool          *DownstreamPool
+	aggregator    *MCPAggregator
+	mu            sync.RWMutex
+	token         string
+	tokenExpiry   time.Time
 }
 
 func main() {
@@ -89,6 +103,9 @@ func main() {
 		configCachePath = "last_good_config.json"
 	}
 
+	pool := NewDownstreamPool(consoleURL, logger)
+	aggregator := NewMCPAggregator(pool, logger)
+
 	gw := &Gateway{
 		configPath:    configCachePath,
 		consoleURL:    consoleURL,
@@ -97,17 +114,24 @@ func main() {
 		ingestURL:     ingestURL,
 		logger:        logger,
 		httpClient: &http.Client{
-			Timeout: 10 * time.Second,
+			Timeout: 15 * time.Second,
 		},
+		pool:       pool,
+		aggregator: aggregator,
 	}
 
 	// 1. Load last known good config from local disk (fail-static guarantee)
 	gw.loadLocalConfig()
 
-	// 2. Start background config synchronizer (pull / poll from Console)
+	// 2. Start background synchronizers
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Config Poller (long-poll with ETag and atomic swap)
 	go gw.startConfigPoller(ctx)
+
+	// Heartbeat emitter
+	go gw.startHeartbeatLoop(ctx)
 
 	// 3. Setup HTTP Server
 	mux := http.NewServeMux()
@@ -145,6 +169,16 @@ func main() {
 	logger.Info("gateway terminated cleanly")
 }
 
+func (g *Gateway) getAggregator() *MCPAggregator {
+	if g.aggregator == nil {
+		if g.pool == nil {
+			g.pool = NewDownstreamPool(g.consoleURL, g.logger)
+		}
+		g.aggregator = NewMCPAggregator(g.pool, g.logger)
+	}
+	return g.aggregator
+}
+
 func (g *Gateway) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -177,42 +211,99 @@ func (g *Gateway) handleMCP(w http.ResponseWriter, r *http.Request) {
 	eventID := uuid.NewString()
 
 	if cfg == nil {
-		http.Error(w, `{"jsonrpc":"2.0","error":{"code":-32000,"message":"Gateway uninitialized"},"id":null}`, http.StatusServiceUnavailable)
+		resp := NewJSONRPCError(nil, ErrCodeInternalError, "Gateway uninitialized", nil)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(resp)
 		return
 	}
 
 	proj, exists := cfg.Projects[slug]
-	if !exists {
-		http.Error(w, fmt.Sprintf(`{"jsonrpc":"2.0","error":{"code":-32000,"message":"Project %q not found"},"id":null}`, slug), http.StatusNotFound)
+	if !exists || proj.Status != "active" {
+		resp := NewJSONRPCError(nil, ErrCodeInvalidRequest, fmt.Sprintf("Project %q not found or inactive", slug), nil)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(resp)
 		return
 	}
 
 	// Read client payload
-	body, _ := io.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		resp := NewJSONRPCError(nil, ErrCodeParseError, "Failed to read request body", err.Error())
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	// Allow empty GET for health/capabilities discovery
+	if len(body) == 0 && r.Method == http.MethodGet {
+		resp := g.getAggregator().HandleInitialize(&JSONRPCRequest{ID: 1}, &proj)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	var rpcReq JSONRPCRequest
+	if err := json.Unmarshal(body, &rpcReq); err != nil {
+		resp := NewJSONRPCError(nil, ErrCodeParseError, "Parse error: invalid JSON", err.Error())
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	// Notifications have no ID and start with notifications/
+	if rpcReq.ID == nil && strings.HasPrefix(rpcReq.Method, "notifications/") {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	agg := g.getAggregator()
+	var rpcResp *JSONRPCResponse
+	var mcpServer string
+	var toolName string
+
+	switch rpcReq.Method {
+	case "initialize":
+		rpcResp = agg.HandleInitialize(&rpcReq, &proj)
+	case "ping":
+		rpcResp = agg.HandlePing(&rpcReq)
+	case "tools/list":
+		rpcResp = agg.HandleToolsList(r.Context(), &rpcReq, &proj)
+	case "tools/call":
+		rpcResp, mcpServer, toolName, _ = agg.HandleToolsCall(r.Context(), &rpcReq, &proj)
+	case "prompts/list":
+		rpcResp = agg.HandlePromptsList(r.Context(), &rpcReq, &proj)
+	case "resources/list":
+		rpcResp = agg.HandleResourcesList(r.Context(), &rpcReq, &proj)
+	default:
+		rpcResp = NewJSONRPCError(rpcReq.ID, ErrCodeMethodNotFound, fmt.Sprintf("Method not found: %s", rpcReq.Method), nil)
+	}
+
+	respBytes, _ := json.Marshal(rpcResp)
 
 	// Async log dispatch to Ingest
-	go g.dispatchLog(eventID, slug, startTime, http.StatusOK, len(body))
+	statusStr := "200"
+	errStr := ""
+	if rpcResp.Error != nil {
+		statusStr = fmt.Sprintf("%d", rpcResp.Error.Code)
+		errStr = rpcResp.Error.Message
+	}
+	go g.dispatchLogExtended(eventID, slug, mcpServer, toolName, startTime, statusStr, len(body), len(respBytes), errStr)
 
-	// Return mock MCP initialize or aggregated tools response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"jsonrpc": "2.0",
-		"result": map[string]interface{}{
-			"protocolVersion": "2024-11-05",
-			"capabilities": map[string]interface{}{
-				"tools": map[string]interface{}{"listChanged": true},
-			},
-			"serverInfo": map[string]interface{}{
-				"name":    fmt.Sprintf("AI Gateway Virtual Server [%s]", proj.Name),
-				"version": "1.0.0",
-			},
-		},
-		"id": 1,
-	})
+	_, _ = w.Write(respBytes)
 }
 
 func (g *Gateway) dispatchLog(eventID, project string, start time.Time, status int, bytesIn int) {
+	g.dispatchLogExtended(eventID, project, "", "", start, fmt.Sprintf("%d", status), bytesIn, 128, "")
+}
+
+func (g *Gateway) dispatchLogExtended(eventID, project, server, tool string, start time.Time, status string, bytesIn, bytesOut int, errStr string) {
 	if g.httpClient == nil {
 		g.httpClient = &http.Client{Timeout: 5 * time.Second}
 	}
@@ -221,10 +312,13 @@ func (g *Gateway) dispatchLog(eventID, project string, start time.Time, status i
 		"event_id":   eventID,
 		"timestamp":  time.Now().UTC().Format(time.RFC3339Nano),
 		"project":    project,
-		"status":     fmt.Sprintf("%d", status),
+		"mcp_server": server,
+		"tool":       tool,
+		"status":     status,
 		"latency_ms": latency,
 		"bytes_in":   bytesIn,
-		"bytes_out":  128,
+		"bytes_out":  bytesOut,
+		"error":      errStr,
 	}
 
 	raw, _ := json.Marshal(payload)
@@ -251,10 +345,11 @@ func (g *Gateway) loadLocalConfig() {
 			Version: 1,
 			Projects: map[string]Project{
 				"production": {
-					ID:     "00000000-0000-0000-0000-000000000001",
-					Slug:   "production",
-					Name:   "Production Gateway",
-					Status: "active",
+					ID:            "00000000-0000-0000-0000-000000000001",
+					Slug:          "production",
+					Name:          "Production Gateway",
+					Status:        "active",
+					ConfigVersion: 1,
 				},
 			},
 			UpdatedAt: time.Now().UTC().Format(time.RFC3339),
@@ -282,8 +377,171 @@ func (g *Gateway) saveLocalConfig(cfg *GatewayConfig) error {
 	return os.WriteFile(g.configPath, raw, 0644)
 }
 
+// authenticateWithConsole exchanges GATEWAY_SECRET for a short-lived JWT
+func (g *Gateway) authenticateWithConsole() error {
+	if g.logger == nil {
+		g.logger = slog.Default()
+	}
+	payload := map[string]string{
+		"gateway_id": g.gatewayID,
+		"secret":     g.gatewaySecret,
+	}
+	raw, _ := json.Marshal(payload)
+
+	req, err := http.NewRequest("POST", g.consoleURL+"/api/gateway/v1/auth", bytes.NewBuffer(raw))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := g.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("gateway auth failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var authRes struct {
+		Token     string `json:"token"`
+		ExpiresIn int    `json:"expires_in"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&authRes); err != nil {
+		return err
+	}
+
+	g.mu.Lock()
+	g.token = authRes.Token
+	g.tokenExpiry = time.Now().Add(time.Duration(authRes.ExpiresIn-60) * time.Second)
+	g.mu.Unlock()
+
+	g.logger.Info("gateway authenticated with control plane", "gateway_id", g.gatewayID)
+	return nil
+}
+
+func (g *Gateway) getToken() (string, error) {
+	g.mu.RLock()
+	token := g.token
+	expiry := g.tokenExpiry
+	g.mu.RUnlock()
+
+	if token == "" || time.Now().After(expiry) {
+		if err := g.authenticateWithConsole(); err != nil {
+			return "", err
+		}
+		g.mu.RLock()
+		token = g.token
+		g.mu.RUnlock()
+	}
+	return token, nil
+}
+
+// startConfigPoller executes long-polling with ETag and atomic swap
 func (g *Gateway) startConfigPoller(ctx context.Context) {
-	ticker := time.NewTicker(15 * time.Second)
+	if g.logger == nil {
+		g.logger = slog.Default()
+	}
+	g.logger.Info("starting gateway configuration synchronizer", "console_url", g.consoleURL)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		token, err := g.getToken()
+		if err != nil {
+			g.logger.Warn("cannot authenticate with console, using fail-static cache", "error", err)
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		currentCfg := g.currentCfg.Load()
+		currentVersion := 0
+		if currentCfg != nil {
+			currentVersion = currentCfg.Version
+		}
+
+		url := fmt.Sprintf("%s/api/gateway/v1/config?since=%d", g.consoleURL, currentVersion)
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		if err != nil {
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		req.Header.Set("Authorization", "Bearer "+token)
+		if currentVersion > 0 {
+			req.Header.Set("If-None-Match", fmt.Sprintf(`"v%d"`, currentVersion))
+		}
+
+		resp, err := g.httpClient.Do(req)
+		if err != nil {
+			g.logger.Warn("config sync request failed, preserving current config (fail-static)", "error", err)
+			// Jittered backoff between 1.5s - 2.5s
+			jitter := time.Duration(1500+rand.Intn(1000)) * time.Millisecond
+			time.Sleep(jitter)
+			continue
+		}
+
+		if resp.StatusCode == http.StatusNotModified {
+			_ = resp.Body.Close()
+			// Config unchanged, loop immediately or after small jitter
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
+
+		if resp.StatusCode == http.StatusUnauthorized {
+			_ = resp.Body.Close()
+			g.mu.Lock()
+			g.token = "" // Force re-authentication
+			g.mu.Unlock()
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			g.logger.Warn("unexpected status from config sync", "status", resp.StatusCode, "body", string(body))
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		var newConfig GatewayConfig
+		if err := json.NewDecoder(resp.Body).Decode(&newConfig); err != nil {
+			_ = resp.Body.Close()
+			g.logger.Error("failed to decode config sync response, preserving current config", "error", err)
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		_ = resp.Body.Close()
+
+		// Validate new config
+		if newConfig.Projects == nil {
+			newConfig.Projects = make(map[string]Project)
+		}
+
+		// Perform Atomic Swap
+		g.currentCfg.Store(&newConfig)
+		_ = g.saveLocalConfig(&newConfig)
+
+		g.logger.Info("applied new configuration atomically",
+			"new_version", newConfig.Version,
+			"previous_version", currentVersion,
+			"projects_count", len(newConfig.Projects))
+
+		// Immediately trigger a heartbeat update
+		go g.sendHeartbeat()
+	}
+}
+
+// startHeartbeatLoop sends periodic health and metrics heartbeats to Console
+func (g *Gateway) startHeartbeatLoop(ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -291,11 +549,43 @@ func (g *Gateway) startConfigPoller(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// Query console /api/gateway/v1/config when implemented in Phase 3
-			// For Phase 1, ensure local config remains valid
-			if g.currentCfg.Load() == nil {
-				g.loadLocalConfig()
-			}
+			g.sendHeartbeat()
 		}
+	}
+}
+
+func (g *Gateway) sendHeartbeat() {
+	token, err := g.getToken()
+	if err != nil {
+		return
+	}
+
+	currentCfg := g.currentCfg.Load()
+	appliedVersion := 0
+	if currentCfg != nil {
+		appliedVersion = currentCfg.Version
+	}
+
+	payload := map[string]interface{}{
+		"gateway_id":             g.gatewayID,
+		"version":                "1.0.0",
+		"applied_config_version": appliedVersion,
+		"metrics": map[string]interface{}{
+			"goroutines": 10,
+			"status":     "healthy",
+		},
+	}
+	raw, _ := json.Marshal(payload)
+
+	req, err := http.NewRequest("POST", g.consoleURL+"/api/gateway/v1/heartbeat", bytes.NewBuffer(raw))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := g.httpClient.Do(req)
+	if err == nil {
+		_ = resp.Body.Close()
 	}
 }

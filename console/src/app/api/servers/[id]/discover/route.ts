@@ -112,7 +112,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     if (addedCount > 0) {
       await pool.query(
-        'UPDATE projects SET config_version = config_version + 1, updated_at = NOW() WHERE id = $1',
+        'UPDATE projects SET config_version = (SELECT COALESCE(MAX(config_version), 0) + 1 FROM projects), updated_at = NOW() WHERE id = $1',
         [server.project_id]
       );
     }

@@ -92,6 +92,13 @@ export default function ConsoleDashboard() {
   const [discoveredTools, setDiscoveredTools] = useState<DiscoveredTool[]>([]);
   const [statusMessage, setStatusMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
 
+  // Gateways State
+  const [gatewaysList, setGatewaysList] = useState<any[]>([]);
+  const [showNewGatewayModal, setShowNewGatewayModal] = useState<boolean>(false);
+  const [newGatewayName, setNewGatewayName] = useState<string>('');
+  const [generatedSecret, setGeneratedSecret] = useState<string | null>(null);
+  const [gatewayActionLoading, setGatewayActionLoading] = useState<boolean>(false);
+
   useEffect(() => {
     checkAuth();
   }, []);
@@ -99,8 +106,46 @@ export default function ConsoleDashboard() {
   useEffect(() => {
     if (user) {
       loadProjects();
+      loadGateways();
     }
   }, [user]);
+
+  const loadGateways = async () => {
+    try {
+      const res = await fetch('/api/gateways');
+      if (res.ok) {
+        const data = await res.json();
+        setGatewaysList(data.gateways || []);
+      }
+    } catch (err) {
+      console.error('Failed to load gateways:', err);
+    }
+  };
+
+  const handleRegisterGateway = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newGatewayName.trim()) return;
+    setGatewayActionLoading(true);
+    try {
+      const res = await fetch('/api/gateways', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newGatewayName.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setGeneratedSecret(data.secret);
+        await loadGateways();
+        showBanner(`Gateway "${data.gateway.name}" registered! Copy the secret now.`, 'success');
+      } else {
+        showBanner(data.error || 'Failed to register gateway', 'error');
+      }
+    } catch (err: any) {
+      showBanner(err.message, 'error');
+    } finally {
+      setGatewayActionLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (selectedProjectId) {
@@ -947,8 +992,81 @@ export default function ConsoleDashboard() {
             </div>
           )}
 
+          {/* TAB 3: GATEWAYS FLEET */}
+          {activeTab === 'gateways' && (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+                <div>
+                  <h2 style={{ fontSize: '1.6rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '4px' }}>
+                    Headless AI Gateway Fleet
+                  </h2>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
+                    Data plane instances poll configuration via HTTPS, enforce fail-static local caching, and emit real-time heartbeats.
+                  </p>
+                </div>
+                <button
+                  id="register-gateway-btn"
+                  onClick={() => {
+                    setGeneratedSecret(null);
+                    setShowNewGatewayModal(true);
+                  }}
+                  className="btn-primary"
+                >
+                  + Register New Gateway
+                </button>
+              </div>
+
+              {/* Gateway Cards Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '20px' }}>
+                {gatewaysList.map((gw) => (
+                  <div key={gw.id} className="glass-panel" style={{ padding: '24px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div className="pulse-dot" style={{ backgroundColor: gw.status === 'active' ? '#10b981' : '#f59e0b' }}></div>
+                        <h3 style={{ fontSize: '1.15rem', fontWeight: 600, color: '#f8fafc' }}>{gw.name}</h3>
+                      </div>
+                      <span className={`badge ${gw.status === 'active' ? 'badge-emerald' : 'badge-indigo'}`}>
+                        {gw.status.toUpperCase()}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Runtime Version:</span>
+                        <strong style={{ color: '#fff' }}>v{gw.version || '1.0.0'}</strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Applied Config:</span>
+                        <span className="badge badge-cyan">v{gw.applied_config_version || 1}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Last Seen / Heartbeat:</span>
+                        <span style={{ color: 'var(--accent-cyan)' }}>
+                          {gw.last_seen_at ? new Date(gw.last_seen_at).toLocaleTimeString() : 'Awaiting heartbeat'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+                        Protocol: HTTPS Polling
+                      </span>
+                      <button
+                        onClick={loadGateways}
+                        className="btn-secondary"
+                        style={{ fontSize: '0.8rem', padding: '4px 10px' }}
+                      >
+                        🔄 Refresh
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Other Tabs */}
-          {activeTab !== 'projects' && activeTab !== 'mcp-servers' && (
+          {activeTab !== 'projects' && activeTab !== 'mcp-servers' && activeTab !== 'gateways' && (
             <div className="glass-panel" style={{ padding: '40px', textAlign: 'center' }}>
               <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>🚧</div>
               <h3 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '8px' }}>
@@ -1169,6 +1287,93 @@ export default function ConsoleDashboard() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Register Gateway */}
+      {showNewGatewayModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0, 0, 0, 0.75)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}>
+          <div className="glass-panel" style={{ width: '100%', maxWidth: '500px', padding: '32px' }}>
+            <h3 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#f8fafc', marginBottom: '8px' }}>
+              Register Gateway Instance
+            </h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
+              Provision a headless gateway secret. The secret will be hashed and displayed only once.
+            </p>
+
+            {generatedSecret ? (
+              <div>
+                <div style={{ background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.4)', borderRadius: '8px', padding: '16px', marginBottom: '20px' }}>
+                  <span style={{ fontSize: '0.8rem', color: '#34d399', fontWeight: 600, display: 'block', marginBottom: '6px' }}>
+                    GATEWAY SECRET GENERATED:
+                  </span>
+                  <code style={{ fontSize: '0.95rem', color: '#ffffff', wordBreak: 'break-all', display: 'block', background: 'rgba(0,0,0,0.4)', padding: '10px', borderRadius: '6px' }}>
+                    {generatedSecret}
+                  </code>
+                  <span style={{ fontSize: '0.75rem', color: '#fda4af', display: 'block', marginTop: '8px' }}>
+                    ⚠️ Copy this secret now. It will never be displayed again.
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={() => {
+                      setShowNewGatewayModal(false);
+                      setGeneratedSecret(null);
+                      setNewGatewayName('');
+                    }}
+                    className="btn-primary"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleRegisterGateway} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
+                    Gateway Instance Name
+                  </label>
+                  <input
+                    id="gateway-name-input"
+                    className="input-field"
+                    placeholder="e.g. gateway-us-east-01"
+                    value={newGatewayName}
+                    onChange={(e) => setNewGatewayName(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '12px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowNewGatewayModal(false)}
+                    className="btn-secondary"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    id="submit-register-gateway-btn"
+                    type="submit"
+                    disabled={gatewayActionLoading}
+                    className="btn-primary"
+                  >
+                    {gatewayActionLoading ? 'Registering...' : 'Generate Secret & Register'}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

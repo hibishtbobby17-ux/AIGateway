@@ -52,7 +52,7 @@ export async function PUT(
 
     // Increment config_version for atomic swap propagation
     await pool.query(
-      'UPDATE projects SET config_version = config_version + 1, updated_at = NOW() WHERE id = $1',
+      'UPDATE projects SET config_version = (SELECT COALESCE(MAX(config_version), 0) + 1 FROM projects), updated_at = NOW() WHERE id = $1',
       [projectId]
     );
 

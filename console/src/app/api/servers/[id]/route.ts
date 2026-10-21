@@ -71,7 +71,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
     const projectId = updRes.rows[0].project_id;
     await pool.query(
-      'UPDATE projects SET config_version = config_version + 1, updated_at = NOW() WHERE id = $1',
+      'UPDATE projects SET config_version = (SELECT COALESCE(MAX(config_version), 0) + 1 FROM projects), updated_at = NOW() WHERE id = $1',
       [projectId]
     );
 
@@ -105,7 +105,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     await pool.query('DELETE FROM mcp_servers WHERE id = $1', [params.id]);
 
     await pool.query(
-      'UPDATE projects SET config_version = config_version + 1, updated_at = NOW() WHERE id = $1',
+      'UPDATE projects SET config_version = (SELECT COALESCE(MAX(config_version), 0) + 1 FROM projects), updated_at = NOW() WHERE id = $1',
       [projectId]
     );
 
