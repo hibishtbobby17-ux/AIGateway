@@ -22,6 +22,7 @@ type DownstreamPool struct {
 	bulkheads   sync.Map // map[string]chan struct{}
 	maxPerHost  int
 	logger      *slog.Logger
+	oauth       *OAuthManager
 }
 
 func NewDownstreamPool(consoleURL string, logger *slog.Logger) *DownstreamPool {
@@ -52,6 +53,10 @@ func NewDownstreamPool(consoleURL string, logger *slog.Logger) *DownstreamPool {
 		maxPerHost: 50,
 		logger:     logger,
 	}
+}
+
+func (p *DownstreamPool) SetOAuthManager(oauth *OAuthManager) {
+	p.oauth = oauth
 }
 
 // normalizeURL resolves docker network hostnames if running within docker compose
@@ -112,9 +117,44 @@ func (p *DownstreamPool) Execute(ctx context.Context, server *MCPServer, rpcReq 
 	httpReq.Header.Set("Accept", "application/json")
 	httpReq.Header.Set("traceparent", traceparent)
 
+	// Attach outbound OAuth token if configured
+	if p.oauth != nil && (server.AuthType == "oauth_cc" || server.AuthType == "oauth_authcode") {
+		token, tokenErr := p.oauth.GetOutboundToken(ctx, server, false)
+		if tokenErr != nil {
+			return nil, traceID, fmt.Errorf("failed to obtain token for %s: %w", server.Name, tokenErr)
+		}
+		if token != "" {
+			httpReq.Header.Set("Authorization", "Bearer "+token)
+		}
+	}
+
 	resp, err := p.client.Do(httpReq)
 	if err != nil {
 		return nil, traceID, fmt.Errorf("downstream connection failed: %w", err)
+	}
+
+	// On 401 Unauthorized, force token refresh and retry ONCE
+	if resp.StatusCode == http.StatusUnauthorized && p.oauth != nil && (server.AuthType == "oauth_cc" || server.AuthType == "oauth_authcode") {
+		_ = resp.Body.Close()
+		p.logger.Warn("downstream returned 401, forcing token refresh and retrying once", "server", server.Name)
+		refreshedToken, refErr := p.oauth.GetOutboundToken(ctx, server, true)
+		if refErr != nil {
+			return nil, traceID, fmt.Errorf("token refresh failed for %s: %w", server.Name, refErr)
+		}
+
+		retryReq, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewBuffer(rawBody))
+		if err != nil {
+			return nil, traceID, err
+		}
+		retryReq.Header.Set("Content-Type", "application/json")
+		retryReq.Header.Set("Accept", "application/json")
+		retryReq.Header.Set("traceparent", traceparent)
+		retryReq.Header.Set("Authorization", "Bearer "+refreshedToken)
+
+		resp, err = p.client.Do(retryReq)
+		if err != nil {
+			return nil, traceID, fmt.Errorf("downstream retry failed: %w", err)
+		}
 	}
 	defer resp.Body.Close()
 

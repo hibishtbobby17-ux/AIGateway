@@ -113,6 +113,8 @@ export async function initDatabase(): Promise<void> {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+      DROP INDEX IF EXISTS idx_oauth_configs_server;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_oauth_configs_server ON oauth_configs(mcp_server_id);
     `);
 
     // 7. OAuth Tokens
@@ -129,6 +131,8 @@ export async function initDatabase(): Promise<void> {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+      DROP INDEX IF EXISTS idx_oauth_tokens_server;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_oauth_tokens_server ON oauth_tokens(mcp_server_id);
     `);
 
     // 8. Gateway Instances
@@ -196,6 +200,33 @@ export async function initDatabase(): Promise<void> {
         timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         diff JSONB NOT NULL DEFAULT '{}'::jsonb
       );
+    `);
+
+    // 13. Gateway Logs (Log Store)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS gateway_logs (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        event_id VARCHAR(128) NOT NULL,
+        project VARCHAR(100) NOT NULL,
+        mcp_server VARCHAR(255),
+        tool VARCHAR(255),
+        client_id VARCHAR(255),
+        status VARCHAR(50) NOT NULL,
+        latency_ms DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+        bytes_in BIGINT NOT NULL DEFAULT 0,
+        bytes_out BIGINT NOT NULL DEFAULT 0,
+        trace_id VARCHAR(128),
+        error TEXT,
+        attributes JSONB NOT NULL DEFAULT '{}'::jsonb,
+        timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_gateway_logs_event_id ON gateway_logs (event_id);
+      CREATE INDEX IF NOT EXISTS idx_gateway_logs_project_ts ON gateway_logs (project, timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_gateway_logs_timestamp ON gateway_logs (timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_gateway_logs_trace_id ON gateway_logs (trace_id);
+      CREATE INDEX IF NOT EXISTS idx_gateway_logs_server ON gateway_logs (mcp_server);
+      CREATE INDEX IF NOT EXISTS idx_gateway_logs_tool ON gateway_logs (tool);
     `);
 
     // Seed default organization if empty

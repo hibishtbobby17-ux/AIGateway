@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { pool, initDatabase } from '@/db';
 import jwt from 'jsonwebtoken';
 
+import { decryptSecret } from '@/lib/crypto';
+
 export const dynamic = 'force-dynamic';
 
 const JWT_SECRET = process.env.CONSOLE_JWT_SECRET || 'dev-console-secret-super-secure-key-32bytes-min';
@@ -36,7 +38,7 @@ async function fetchLatestConfig() {
     ORDER BY created_at ASC
   `);
 
-  // 3. Fetch all servers with their tool policies
+  // 3. Fetch all servers with their tool policies and oauth configs
   const serversRes = await pool.query(`
     SELECT 
       s.id,
@@ -50,18 +52,32 @@ async function fetchLatestConfig() {
       s.enabled,
       COALESCE(
         json_agg(
-          json_build_object(
+          DISTINCT jsonb_build_object(
             'tool_name', tp.tool_name,
             'enabled', tp.enabled,
             'rename', tp.rename
           )
         ) FILTER (WHERE tp.id IS NOT NULL),
         '[]'
-      ) as tool_policies
+      ) as tool_policies,
+      CASE WHEN oc.id IS NOT NULL THEN
+        json_build_object(
+          'issuer', oc.issuer,
+          'token_endpoint', oc.token_endpoint,
+          'client_id', oc.client_id,
+          'client_secret_encrypted', oc.client_secret_encrypted,
+          'scopes', oc.scopes,
+          'audience', oc.audience,
+          'grant_type', oc.grant_type,
+          'status', COALESCE(ot.status, 'none')
+        )
+      ELSE NULL END as oauth_config
     FROM mcp_servers s
     LEFT JOIN tool_policies tp ON tp.mcp_server_id = s.id
+    LEFT JOIN oauth_configs oc ON oc.mcp_server_id = s.id
+    LEFT JOIN oauth_tokens ot ON ot.mcp_server_id = s.id
     WHERE s.enabled = true
-    GROUP BY s.id
+    GROUP BY s.id, oc.id, ot.id
   `);
 
   const serversByProject: Record<string, any[]> = {};
@@ -69,6 +85,29 @@ async function fetchLatestConfig() {
     if (!serversByProject[s.project_id]) {
       serversByProject[s.project_id] = [];
     }
+
+    let oauthConfig: any = null;
+    if (s.oauth_config) {
+      let clientSecret: string | undefined;
+      if (s.oauth_config.client_secret_encrypted) {
+        try {
+          clientSecret = decryptSecret(s.oauth_config.client_secret_encrypted);
+        } catch {
+          // ignore
+        }
+      }
+      oauthConfig = {
+        issuer: s.oauth_config.issuer,
+        token_endpoint: s.oauth_config.token_endpoint,
+        client_id: s.oauth_config.client_id,
+        client_secret: clientSecret,
+        scopes: s.oauth_config.scopes || [],
+        audience: s.oauth_config.audience,
+        grant_type: s.oauth_config.grant_type,
+        status: s.oauth_config.status || 'none',
+      };
+    }
+
     serversByProject[s.project_id].push({
       id: s.id,
       name: s.name,
@@ -79,17 +118,20 @@ async function fetchLatestConfig() {
       timeouts: s.timeouts,
       enabled: s.enabled,
       tool_policies: s.tool_policies || [],
+      oauth_config: oauthConfig,
     });
   }
 
   const projectsMap: Record<string, any> = {};
   for (const p of projRes.rows) {
+    const inboundAuth = p.settings?.inbound_auth || { mode: 'none' };
     projectsMap[p.slug] = {
       id: p.id,
       name: p.name,
       slug: p.slug,
       status: p.status,
       settings: p.settings || {},
+      inbound_auth: inboundAuth,
       config_version: p.config_version,
       servers: serversByProject[p.id] || [],
     };

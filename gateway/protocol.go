@@ -109,3 +109,21 @@ type MCPResource struct {
 type MCPResourceReadParams struct {
 	URI string `json:"uri"`
 }
+
+// LogEvent represents a structured telemetry and access log event
+type LogEvent struct {
+	EventID    string                 `json:"event_id"`
+	Timestamp  string                 `json:"timestamp"`
+	Project    string                 `json:"project"`
+	MCPServer  string                 `json:"mcp_server,omitempty"`
+	Tool       string                 `json:"tool,omitempty"`
+	ClientID   string                 `json:"client_id,omitempty"`
+	Status     string                 `json:"status"`
+	LatencyMs  float64                `json:"latency_ms"`
+	BytesIn    int64                  `json:"bytes_in"`
+	BytesOut   int64                  `json:"bytes_out"`
+	TraceID    string                 `json:"trace_id,omitempty"`
+	Error      string                 `json:"error,omitempty"`
+	Attributes map[string]interface{} `json:"attributes,omitempty"`
+}
+

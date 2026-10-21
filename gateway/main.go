@@ -26,14 +26,34 @@ type GatewayConfig struct {
 	UpdatedAt string             `json:"generated_at"`
 }
 
+type InboundAuth struct {
+	Mode           string   `json:"mode"` // none, oauth, api_key
+	Issuer         string   `json:"issuer,omitempty"`
+	JWKSUri        string   `json:"jwks_uri,omitempty"`
+	Audience       string   `json:"audience,omitempty"`
+	RequiredScopes []string `json:"required_scopes,omitempty"`
+}
+
 type Project struct {
 	ID            string      `json:"id"`
 	Slug          string      `json:"slug"`
 	Name          string      `json:"name"`
 	Status        string      `json:"status"`
 	Settings      interface{} `json:"settings"`
+	InboundAuth   InboundAuth `json:"inbound_auth,omitempty"`
 	ConfigVersion int         `json:"config_version"`
 	Servers       []MCPServer `json:"servers,omitempty"`
+}
+
+type OAuthConfig struct {
+	Issuer        string   `json:"issuer,omitempty"`
+	TokenEndpoint string   `json:"token_endpoint,omitempty"`
+	ClientID      string   `json:"client_id,omitempty"`
+	ClientSecret  string   `json:"client_secret,omitempty"`
+	Scopes        []string `json:"scopes,omitempty"`
+	Audience      string   `json:"audience,omitempty"`
+	GrantType     string   `json:"grant_type,omitempty"`
+	Status        string   `json:"status,omitempty"`
 }
 
 type MCPServer struct {
@@ -42,9 +62,11 @@ type MCPServer struct {
 	NamespacePrefix string       `json:"namespace_prefix"`
 	Transport       string       `json:"transport"`
 	URL             string       `json:"url"`
-	AuthType        string       `json:"auth_type"`
+	AuthType        string       `json:"auth_type"` // none, api_key, oauth_cc, oauth_authcode
+	Timeouts        interface{}  `json:"timeouts,omitempty"`
 	Enabled         bool         `json:"enabled"`
 	ToolPolicies    []ToolPolicy `json:"tool_policies,omitempty"`
+	OAuthConfig     *OAuthConfig `json:"oauth_config,omitempty"`
 }
 
 type ToolPolicy struct {
@@ -64,6 +86,8 @@ type Gateway struct {
 	httpClient    *http.Client
 	pool          *DownstreamPool
 	aggregator    *MCPAggregator
+	oauth         *OAuthManager
+	spooler       *Spooler
 	mu            sync.RWMutex
 	token         string
 	tokenExpiry   time.Time
@@ -120,6 +144,20 @@ func main() {
 		aggregator: aggregator,
 	}
 
+	spooler := NewSpooler(SpoolerConfig{
+		IngestURL:     ingestURL,
+		SpoolFilePath: os.Getenv("SPOOL_FILE_PATH"),
+		BatchSize:     20,
+		FlushInterval: 400 * time.Millisecond,
+		Logger:        logger,
+		HTTPClient:    &http.Client{Timeout: 1500 * time.Millisecond},
+	})
+	gw.spooler = spooler
+
+	oauthMgr := NewOAuthManager(consoleURL, gw, logger)
+	pool.SetOAuthManager(oauthMgr)
+	gw.oauth = oauthMgr
+
 	// 1. Load last known good config from local disk (fail-static guarantee)
 	gw.loadLocalConfig()
 
@@ -139,6 +177,8 @@ func main() {
 	mux.HandleFunc("GET /readyz", gw.handleReadyz)
 	mux.HandleFunc("POST /p/{slug}/mcp", gw.handleMCP)
 	mux.HandleFunc("GET /p/{slug}/mcp", gw.handleMCP)
+	mux.HandleFunc("GET /p/{slug}/.well-known/oauth-protected-resource", gw.handleOAuthProtectedResource)
+	mux.HandleFunc("GET /.well-known/oauth-protected-resource", gw.handleOAuthProtectedResource)
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%s", port),
@@ -166,6 +206,7 @@ func main() {
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		logger.Error("gateway forced shutdown", "error", err)
 	}
+	gw.spooler.Close()
 	logger.Info("gateway terminated cleanly")
 }
 
@@ -177,6 +218,38 @@ func (g *Gateway) getAggregator() *MCPAggregator {
 		g.aggregator = NewMCPAggregator(g.pool, g.logger)
 	}
 	return g.aggregator
+}
+
+func (g *Gateway) getOAuth() *OAuthManager {
+	if g.oauth == nil {
+		g.oauth = NewOAuthManager(g.consoleURL, g, g.logger)
+		if g.pool != nil {
+			g.pool.SetOAuthManager(g.oauth)
+		}
+	}
+	return g.oauth
+}
+
+func (g *Gateway) handleOAuthProtectedResource(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+	cfg := g.currentCfg.Load()
+	issuer := ""
+	if cfg != nil && slug != "" {
+		if p, ok := cfg.Projects[slug]; ok && p.InboundAuth.Issuer != "" {
+			issuer = p.InboundAuth.Issuer
+		}
+	}
+	authServers := []string{}
+	if issuer != "" {
+		authServers = append(authServers, issuer)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"resource":              fmt.Sprintf("http://%s/p/%s/mcp", r.Host, slug),
+		"authorization_servers": authServers,
+		"scopes_supported":      []string{"mcp:tools", "mcp:read", "mcp:write"},
+	})
 }
 
 func (g *Gateway) handleHealthz(w http.ResponseWriter, r *http.Request) {
@@ -210,48 +283,142 @@ func (g *Gateway) handleMCP(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
 	eventID := uuid.NewString()
 
+	traceID := r.Header.Get("traceparent")
+	if traceID == "" {
+		traceID = r.Header.Get("X-Trace-ID")
+	}
+	if traceID == "" {
+		traceID = r.Header.Get("X-Request-ID")
+	}
+	if traceID == "" {
+		traceID = eventID
+	}
+
+	clientID := r.Header.Get("X-Client-ID")
+	if clientID == "" {
+		clientID = r.RemoteAddr
+	}
+
+	statusStr := "200"
+	errStr := ""
+	mcpServer := ""
+	toolName := ""
+	bytesIn := 0
+	bytesOut := 0
+
+	defer func() {
+		latency := float64(time.Since(startTime).Microseconds()) / 1000.0
+		if g.spooler != nil {
+			g.spooler.Emit(LogEvent{
+				EventID:    eventID,
+				Timestamp:  time.Now().UTC().Format(time.RFC3339Nano),
+				Project:    slug,
+				MCPServer:  mcpServer,
+				Tool:       toolName,
+				ClientID:   clientID,
+				Status:     statusStr,
+				LatencyMs:  latency,
+				BytesIn:    int64(bytesIn),
+				BytesOut:   int64(bytesOut),
+				TraceID:    traceID,
+				Error:      errStr,
+				Attributes: map[string]interface{}{"method": r.Method, "path": r.URL.Path},
+			})
+		}
+	}()
+
 	if cfg == nil {
+		statusStr = "503"
+		errStr = "Gateway uninitialized"
 		resp := NewJSONRPCError(nil, ErrCodeInternalError, "Gateway uninitialized", nil)
+		respBytes, _ := json.Marshal(resp)
+		bytesOut = len(respBytes)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		_ = json.NewEncoder(w).Encode(resp)
+		_, _ = w.Write(respBytes)
 		return
 	}
 
 	proj, exists := cfg.Projects[slug]
 	if !exists || proj.Status != "active" {
-		resp := NewJSONRPCError(nil, ErrCodeInvalidRequest, fmt.Sprintf("Project %q not found or inactive", slug), nil)
+		statusStr = "404"
+		errStr = fmt.Sprintf("Project %q not found or inactive", slug)
+		resp := NewJSONRPCError(nil, ErrCodeInvalidRequest, errStr, nil)
+		respBytes, _ := json.Marshal(resp)
+		bytesOut = len(respBytes)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
-		_ = json.NewEncoder(w).Encode(resp)
+		_, _ = w.Write(respBytes)
 		return
+	}
+
+	// Inbound OAuth Bearer Auth Enforcement
+	if proj.InboundAuth.Mode == "oauth" {
+		authHeader := r.Header.Get("Authorization")
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			statusStr = "401"
+			errStr = "Missing bearer token"
+			w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token", error_description="Missing bearer token"`)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			resp := NewJSONRPCError(nil, ErrCodeDownstream, "Unauthorized: missing bearer token", nil)
+			respBytes, _ := json.Marshal(resp)
+			bytesOut = len(respBytes)
+			_, _ = w.Write(respBytes)
+			return
+		}
+		rawToken := strings.TrimPrefix(authHeader, "Bearer ")
+		_, err := g.getOAuth().VerifyInboundBearer(r.Context(), rawToken, proj.InboundAuth)
+		if err != nil {
+			statusStr = "401"
+			errStr = err.Error()
+			w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer error="invalid_token", error_description="%s"`, err.Error()))
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			resp := NewJSONRPCError(nil, ErrCodeDownstream, fmt.Sprintf("Unauthorized: %s", err.Error()), nil)
+			respBytes, _ := json.Marshal(resp)
+			bytesOut = len(respBytes)
+			_, _ = w.Write(respBytes)
+			return
+		}
 	}
 
 	// Read client payload
 	body, err := io.ReadAll(r.Body)
+	bytesIn = len(body)
 	if err != nil {
+		statusStr = "400"
+		errStr = err.Error()
 		resp := NewJSONRPCError(nil, ErrCodeParseError, "Failed to read request body", err.Error())
+		respBytes, _ := json.Marshal(resp)
+		bytesOut = len(respBytes)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(resp)
+		_, _ = w.Write(respBytes)
 		return
 	}
 
 	// Allow empty GET for health/capabilities discovery
 	if len(body) == 0 && r.Method == http.MethodGet {
 		resp := g.getAggregator().HandleInitialize(&JSONRPCRequest{ID: 1}, &proj)
+		respBytes, _ := json.Marshal(resp)
+		bytesOut = len(respBytes)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(resp)
+		_, _ = w.Write(respBytes)
 		return
 	}
 
 	var rpcReq JSONRPCRequest
 	if err := json.Unmarshal(body, &rpcReq); err != nil {
+		statusStr = "400"
+		errStr = "Parse error: invalid JSON"
 		resp := NewJSONRPCError(nil, ErrCodeParseError, "Parse error: invalid JSON", err.Error())
+		respBytes, _ := json.Marshal(resp)
+		bytesOut = len(respBytes)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(resp)
+		_, _ = w.Write(respBytes)
 		return
 	}
 
@@ -263,8 +430,6 @@ func (g *Gateway) handleMCP(w http.ResponseWriter, r *http.Request) {
 
 	agg := g.getAggregator()
 	var rpcResp *JSONRPCResponse
-	var mcpServer string
-	var toolName string
 
 	switch rpcReq.Method {
 	case "initialize":
@@ -283,16 +448,13 @@ func (g *Gateway) handleMCP(w http.ResponseWriter, r *http.Request) {
 		rpcResp = NewJSONRPCError(rpcReq.ID, ErrCodeMethodNotFound, fmt.Sprintf("Method not found: %s", rpcReq.Method), nil)
 	}
 
-	respBytes, _ := json.Marshal(rpcResp)
-
-	// Async log dispatch to Ingest
-	statusStr := "200"
-	errStr := ""
 	if rpcResp.Error != nil {
 		statusStr = fmt.Sprintf("%d", rpcResp.Error.Code)
 		errStr = rpcResp.Error.Message
 	}
-	go g.dispatchLogExtended(eventID, slug, mcpServer, toolName, startTime, statusStr, len(body), len(respBytes), errStr)
+
+	respBytes, _ := json.Marshal(rpcResp)
+	bytesOut = len(respBytes)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -304,33 +466,20 @@ func (g *Gateway) dispatchLog(eventID, project string, start time.Time, status i
 }
 
 func (g *Gateway) dispatchLogExtended(eventID, project, server, tool string, start time.Time, status string, bytesIn, bytesOut int, errStr string) {
-	if g.httpClient == nil {
-		g.httpClient = &http.Client{Timeout: 5 * time.Second}
-	}
 	latency := float64(time.Since(start).Microseconds()) / 1000.0
-	payload := map[string]interface{}{
-		"event_id":   eventID,
-		"timestamp":  time.Now().UTC().Format(time.RFC3339Nano),
-		"project":    project,
-		"mcp_server": server,
-		"tool":       tool,
-		"status":     status,
-		"latency_ms": latency,
-		"bytes_in":   bytesIn,
-		"bytes_out":  bytesOut,
-		"error":      errStr,
-	}
-
-	raw, _ := json.Marshal(payload)
-	req, err := http.NewRequest("POST", g.ingestURL+"/ingest/v1/logs", bytes.NewBuffer(raw))
-	if err != nil {
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := g.httpClient.Do(req)
-	if err == nil {
-		_ = resp.Body.Close()
+	if g.spooler != nil {
+		g.spooler.Emit(LogEvent{
+			EventID:    eventID,
+			Timestamp:  time.Now().UTC().Format(time.RFC3339Nano),
+			Project:    project,
+			MCPServer:  server,
+			Tool:       tool,
+			Status:     status,
+			LatencyMs:  latency,
+			BytesIn:    int64(bytesIn),
+			BytesOut:   int64(bytesOut),
+			Error:      errStr,
+		})
 	}
 }
 

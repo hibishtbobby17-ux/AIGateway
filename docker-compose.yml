@@ -81,8 +81,12 @@ services:
     environment:
       INGEST_PORT: "8082"
       REDIS_ADDR: "redis:6379"
+      DATABASE_URL: postgres://${POSTGRES_USER:-gateway}:${POSTGRES_PASSWORD:-gateway}@postgres:5432/${POSTGRES_DB:-gateway_dev}?sslmode=disable
+      CLICKHOUSE_URL: "http://clickhouse:8123"
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8082/healthz || exit 1"]
@@ -104,6 +108,7 @@ services:
       INGEST_URL: "http://ingest:8082"
       GATEWAY_SECRET: "dev-gateway-secret"
       GATEWAY_ID: "gateway-default-01"
+      SPOOL_FILE_PATH: "/tmp/gateway_events.spool"
     depends_on:
       console:
         condition: service_healthy
