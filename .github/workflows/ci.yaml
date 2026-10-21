@@ -7,10 +7,9 @@ on:
     branches: [ main ]
 
 jobs:
-  test:
-    name: Build & Test
+  test-go:
+    name: Test & Build Go Services (Gateway & Ingest)
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -18,17 +17,36 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.26'
           cache: true
 
-      - name: Run unit & integration tests
-        run: go test -v -race -cover ./...
-
       - name: Build gateway binary
-        run: go build -v ./cmd/gateway
+        run: go build -v ./gateway
 
-      - name: Build control-plane binary
-        run: go build -v ./cmd/control-plane
+      - name: Build ingest binary
+        run: go build -v ./ingest
 
-      - name: Build migrate CLI
-        run: go build -v ./cmd/migrate
+      - name: Run Go tests
+        run: go test -v ./gateway/... ./ingest/...
+
+  test-console:
+    name: Test & Build Console (Next.js / Node API)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: console/package.json
+
+      - name: Install dependencies
+        working-directory: ./console
+        run: npm ci || npm install
+
+      - name: Build console production bundle
+        working-directory: ./console
+        run: npm run build

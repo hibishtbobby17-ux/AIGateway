@@ -1,0 +1,107 @@
+openapi: 3.1.0
+info:
+  title: AI Console & Headless AI Gateway API
+  version: 1.0.0
+  description: API specifications for the Control Plane (Console), Headless Data Plane (Gateway), and Telemetry Ingestion.
+paths:
+  /api/auth/login:
+    post:
+      summary: User login for Console UI
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Login successful
+        '401':
+          description: Invalid credentials
+  /api/auth/me:
+    get:
+      summary: Get current authenticated user and organization
+      responses:
+        '200':
+          description: Authenticated user profile
+        '401':
+          description: Unauthorized
+  /api/auth/logout:
+    post:
+      summary: Logout current user
+      responses:
+        '200':
+          description: Logged out
+  /api/gateway/v1/auth:
+    post:
+      summary: Gateway exchanges secret for short-lived JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [gateway_id, secret]
+              properties:
+                gateway_id:
+                  type: string
+                secret:
+                  type: string
+      responses:
+        '200':
+          description: JWT token issued
+        '401':
+          description: Invalid gateway secret
+  /api/gateway/v1/config:
+    get:
+      summary: Long-polling endpoint for gateway configuration
+      parameters:
+        - name: since
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Full gateway configuration payload
+        '304':
+          description: Config not modified
+  /api/gateway/v1/heartbeat:
+    post:
+      summary: Gateway health and metric heartbeat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                gateway_id:
+                  type: string
+                version:
+                  type: string
+                applied_config_version:
+                  type: integer
+                metrics:
+                  type: object
+      responses:
+        '200':
+          description: Heartbeat acknowledged
+  /ingest/v1/logs:
+    post:
+      summary: Ingest structured gateway/client logs
+      responses:
+        '202':
+          description: Enqueued into Redis Streams
+  /ingest/v1/telemetry:
+    post:
+      summary: Ingest OTLP telemetry metrics and traces
+      responses:
+        '202':
+          description: Enqueued into Redis Streams

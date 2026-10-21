@@ -9,6 +9,9 @@ tmp/
 *.test
 *.out
 coverage.html
+node_modules/
+console/node_modules/
+console/.next/
 web/node_modules/
 web/dist/
 deployments/compose/postgres_data/

@@ -1,0 +1,1 @@
+{"version":1,"functions":{"/api/auth/me":{},"/api/mock/mcp-weather":{},"/api/projects":{},"/api/mock/mcp-math":{},"/api/projects/[id]":{},"/api/servers/[id]":{},"/api/servers/[id]/test":{},"/api/servers/[id]/discover":{},"/api/servers/[id]/tools/[toolName]":{},"/api/projects/[id]/servers":{}}}
