@@ -68,6 +68,17 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ error: 'Server URL is required' }, { status: 400 });
     }
 
+    // SSRF Validation
+    const { validateSSRF, SSRFError } = await import('@/lib/ssrf');
+    try {
+      await validateSSRF(url.trim());
+    } catch (ssrfErr: any) {
+      if (ssrfErr instanceof SSRFError) {
+        return NextResponse.json({ error: `SSRF Policy Violation: ${ssrfErr.message}` }, { status: 400 });
+      }
+      return NextResponse.json({ error: `URL Validation Error: ${ssrfErr.message}` }, { status: 400 });
+    }
+
     const cleanPrefix = (namespace_prefix || name)
       .toLowerCase()
       .trim()
@@ -79,12 +90,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     // Verify project ownership
     const projCheck = await pool.query(
-      'SELECT id FROM projects WHERE id = $1 AND org_id = $2',
+      'SELECT id, slug FROM projects WHERE id = $1 AND org_id = $2',
       [params.id, session.orgId]
     );
     if (projCheck.rows.length === 0) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
+    const projectSlug = projCheck.rows[0].slug;
 
     const insRes = await pool.query(`
       INSERT INTO mcp_servers (
@@ -103,13 +115,24 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       enabled !== undefined ? enabled : true,
     ]);
 
+    const createdServer = insRes.rows[0];
+
     // Increment project config_version
     await pool.query(
       'UPDATE projects SET config_version = (SELECT COALESCE(MAX(config_version), 0) + 1 FROM projects), updated_at = NOW() WHERE id = $1',
       [params.id]
     );
 
-    return NextResponse.json({ server: insRes.rows[0] }, { status: 201 });
+    const { logAudit } = await import('@/lib/audit');
+    await logAudit({
+      orgId: session.orgId,
+      actor: session.email,
+      action: 'server.create',
+      target: `server:${createdServer.name} in project:${projectSlug}`,
+      diff: { name: createdServer.name, url: createdServer.url, transport: createdServer.transport, auth_type: createdServer.auth_type },
+    });
+
+    return NextResponse.json({ server: createdServer }, { status: 201 });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

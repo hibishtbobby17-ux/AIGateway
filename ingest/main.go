@@ -42,6 +42,8 @@ type IngestServer struct {
 	logger        *slog.Logger
 	maxBodySize   int64
 	httpClient    *http.Client
+	limiter       *IngestLimiter
+	metrics       *IngestMetrics
 }
 
 func main() {
@@ -114,16 +116,19 @@ func main() {
 		logger:        logger,
 		maxBodySize:   5242880, // 5MB payload limit
 		httpClient:    &http.Client{Timeout: 3 * time.Second},
+		limiter:       NewIngestLimiter(0, 0),
+		metrics:       NewIngestMetrics(),
 	}
 
 	// 3. Start Background Redis Stream Consumers
 	consumerCtx, consumerCancel := context.WithCancel(context.Background())
 	go server.startLogQueueConsumer(consumerCtx)
 
-	// 4. Setup Routes - STRICTLY NO READ/UI ROUTES
+	// 4. Setup Routes - STRICTLY NO READ/UI ROUTES (except healthz, readyz, and metrics)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", server.handleHealthz)
 	mux.HandleFunc("GET /readyz", server.handleReadyz)
+	mux.HandleFunc("GET /metrics", server.metrics.HandleMetrics)
 	mux.HandleFunc("POST /ingest/v1/logs", server.handleLogs)
 	mux.HandleFunc("POST /ingest/v1/telemetry", server.handleTelemetry)
 
@@ -200,6 +205,26 @@ func (s *IngestServer) handleCatchAll(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *IngestServer) handleLogs(w http.ResponseWriter, r *http.Request) {
+	// Rate limiting enforcement
+	key := r.Header.Get("X-Ingest-Key")
+	if key == "" {
+		key = r.Header.Get("Authorization")
+	}
+	if key == "" {
+		key = r.RemoteAddr
+	}
+
+	if s.limiter != nil {
+		if allowed, retryAfter := s.limiter.Allow(key); !allowed {
+			if s.metrics != nil {
+				s.metrics.IncRateLimited()
+			}
+			w.Header().Set("Retry-After", fmt.Sprintf("%d", int(retryAfter.Seconds())))
+			http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
+			return
+		}
+	}
+
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, s.maxBodySize))
 	if err != nil {
 		http.Error(w, `{"error":"payload too large or unreadable"}`, http.StatusRequestEntityTooLarge)
@@ -241,6 +266,11 @@ func (s *IngestServer) handleLogs(w http.ResponseWriter, r *http.Request) {
 	if len(events) == 0 {
 		http.Error(w, `{"error":"no valid events found"}`, http.StatusBadRequest)
 		return
+	}
+
+	if s.metrics != nil {
+		s.metrics.AddBytes(int64(len(body)))
+		s.metrics.IncReceived(int64(len(events)))
 	}
 
 	// Normalize events and prepare Redis Stream writes
@@ -287,6 +317,22 @@ func (s *IngestServer) handleLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *IngestServer) handleTelemetry(w http.ResponseWriter, r *http.Request) {
+	key := r.Header.Get("X-Ingest-Key")
+	if key == "" {
+		key = r.RemoteAddr
+	}
+
+	if s.limiter != nil {
+		if allowed, retryAfter := s.limiter.Allow(key); !allowed {
+			if s.metrics != nil {
+				s.metrics.IncRateLimited()
+			}
+			w.Header().Set("Retry-After", fmt.Sprintf("%d", int(retryAfter.Seconds())))
+			http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
+			return
+		}
+	}
+
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, s.maxBodySize))
 	if err != nil {
 		http.Error(w, `{"error":"payload too large"}`, http.StatusRequestEntityTooLarge)
@@ -304,6 +350,11 @@ func (s *IngestServer) handleTelemetry(w http.ResponseWriter, r *http.Request) {
 			"payload":  string(body),
 		},
 	}).Err()
+
+	if s.metrics != nil {
+		s.metrics.AddBytes(int64(len(body)))
+		s.metrics.IncReceived(1)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
@@ -432,6 +483,9 @@ func (s *IngestServer) persistEventsToStores(ctx context.Context, events []LogEv
 					)
 				}
 				_ = tx.Commit(pCtx)
+				if s.metrics != nil {
+					s.metrics.IncPersisted(int64(len(events)))
+				}
 			}
 			conn.Release()
 		} else {

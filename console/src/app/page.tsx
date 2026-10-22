@@ -109,6 +109,16 @@ export default function ConsoleDashboard() {
   const [logAutoRefresh, setLogAutoRefresh] = useState<boolean>(true);
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
 
+  // Audit Logs State
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [auditLoading, setAuditLoading] = useState<boolean>(false);
+  const [auditFilterAction, setAuditFilterAction] = useState<string>('');
+  const [auditFilterActor, setAuditFilterActor] = useState<string>('');
+  const [expandedAuditId, setExpandedAuditId] = useState<string | null>(null);
+
+  // Rotated Secret Modal State
+  const [rotatedSecretModal, setRotatedSecretModal] = useState<{ gatewayName: string; secret: string } | null>(null);
+
   useEffect(() => {
     checkAuth();
   }, []);
@@ -117,8 +127,11 @@ export default function ConsoleDashboard() {
     if (user) {
       loadProjects();
       loadGateways();
+      if (activeTab === 'audit') {
+        loadAuditLogs();
+      }
     }
-  }, [user]);
+  }, [user, activeTab, auditFilterAction, auditFilterActor]);
 
   const loadLogs = async () => {
     setLogsLoading(true);
@@ -185,6 +198,57 @@ export default function ConsoleDashboard() {
       showBanner(err.message, 'error');
     } finally {
       setGatewayActionLoading(false);
+    }
+  };
+
+  const handleRotateGatewaySecret = async (gatewayId: string, gatewayName: string) => {
+    if (!confirm(`Are you sure you want to rotate the secret for gateway "${gatewayName}"? Connected instances must be updated with the new secret.`)) return;
+    try {
+      const res = await fetch(`/api/gateways/${gatewayId}/rotate-secret`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        setRotatedSecretModal({ gatewayName, secret: data.secret });
+        await loadGateways();
+        showBanner(`Secret for "${gatewayName}" rotated successfully!`, 'success');
+      } else {
+        showBanner(data.error || 'Failed to rotate secret', 'error');
+      }
+    } catch (err: any) {
+      showBanner(err.message, 'error');
+    }
+  };
+
+  const handleRevokeGateway = async (gatewayId: string, gatewayName: string) => {
+    if (!confirm(`Are you sure you want to REVOKE gateway "${gatewayName}"? All authentication from this instance will be permanently blocked.`)) return;
+    try {
+      const res = await fetch(`/api/gateways/${gatewayId}/revoke`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        await loadGateways();
+        showBanner(`Gateway "${gatewayName}" has been revoked!`, 'info');
+      } else {
+        showBanner(data.error || 'Failed to revoke gateway', 'error');
+      }
+    } catch (err: any) {
+      showBanner(err.message, 'error');
+    }
+  };
+
+  const loadAuditLogs = async () => {
+    setAuditLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (auditFilterAction) params.append('action', auditFilterAction);
+      if (auditFilterActor) params.append('actor', auditFilterActor);
+      const res = await fetch(`/api/audit?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        setAuditLogs(data.audit_logs || []);
+      }
+    } catch (err) {
+      console.error('Failed to load audit logs:', err);
+    } finally {
+      setAuditLoading(false);
     }
   };
 
@@ -1066,7 +1130,7 @@ export default function ConsoleDashboard() {
                         <div className="pulse-dot" style={{ backgroundColor: gw.status === 'active' ? '#10b981' : '#f59e0b' }}></div>
                         <h3 style={{ fontSize: '1.15rem', fontWeight: 600, color: '#f8fafc' }}>{gw.name}</h3>
                       </div>
-                      <span className={`badge ${gw.status === 'active' ? 'badge-emerald' : 'badge-indigo'}`}>
+                      <span className={`badge ${gw.status === 'active' ? 'badge-emerald' : gw.status === 'revoked' ? 'badge-rose' : 'badge-indigo'}`}>
                         {gw.status.toUpperCase()}
                       </span>
                     </div>
@@ -1088,17 +1152,41 @@ export default function ConsoleDashboard() {
                       </div>
                     </div>
 
-                    <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                       <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
                         Protocol: HTTPS Polling
                       </span>
-                      <button
-                        onClick={loadGateways}
-                        className="btn-secondary"
-                        style={{ fontSize: '0.8rem', padding: '4px 10px' }}
-                      >
-                        🔄 Refresh
-                      </button>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        {gw.status !== 'revoked' && (
+                          <>
+                            <button
+                              id={`rotate-gw-${gw.id}`}
+                              onClick={() => handleRotateGatewaySecret(gw.id, gw.name)}
+                              className="btn-secondary"
+                              style={{ fontSize: '0.75rem', padding: '4px 8px', color: 'var(--accent-cyan)' }}
+                              title="Rotate secret for this gateway"
+                            >
+                              🔑 Rotate
+                            </button>
+                            <button
+                              id={`revoke-gw-${gw.id}`}
+                              onClick={() => handleRevokeGateway(gw.id, gw.name)}
+                              className="btn-secondary"
+                              style={{ fontSize: '0.75rem', padding: '4px 8px', color: '#f43f5e' }}
+                              title="Revoke this gateway instance"
+                            >
+                              🚫 Revoke
+                            </button>
+                          </>
+                        )}
+                        <button
+                          onClick={loadGateways}
+                          className="btn-secondary"
+                          style={{ fontSize: '0.75rem', padding: '4px 8px' }}
+                        >
+                          🔄 Refresh
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -1361,8 +1449,145 @@ export default function ConsoleDashboard() {
             </div>
           )}
 
+          {/* TAB 5: Audit Trail Viewer */}
+          {activeTab === 'audit' && (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+                <div>
+                  <h2 style={{ fontSize: '1.6rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '4px' }}>
+                    Immutable Audit Trail
+                  </h2>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
+                    Tamper-evident record of all console mutations, secret rotations, and configuration updates.
+                  </p>
+                </div>
+                <button
+                  onClick={loadAuditLogs}
+                  className="btn-secondary"
+                  style={{ fontSize: '0.85rem', padding: '8px 16px' }}
+                >
+                  🔄 Refresh Logs
+                </button>
+              </div>
+
+              {/* Filters */}
+              <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: '200px' }}>
+                  <input
+                    id="audit-action-filter"
+                    className="input-field"
+                    placeholder="Filter by action (e.g. gateway, project, server)..."
+                    value={auditFilterAction}
+                    onChange={(e) => setAuditFilterAction(e.target.value)}
+                  />
+                </div>
+                <div style={{ minWidth: '180px' }}>
+                  <input
+                    id="audit-actor-filter"
+                    className="input-field"
+                    placeholder="Filter by actor email..."
+                    value={auditFilterActor}
+                    onChange={(e) => setAuditFilterActor(e.target.value)}
+                  />
+                </div>
+                {(auditFilterAction || auditFilterActor) && (
+                  <button
+                    onClick={() => {
+                      setAuditFilterAction('');
+                      setAuditFilterActor('');
+                    }}
+                    className="btn-secondary"
+                    style={{ fontSize: '0.8rem', padding: '6px 12px' }}
+                  >
+                    ✕ Clear
+                  </button>
+                )}
+              </div>
+
+              {/* Audit Table */}
+              <div className="glass-panel" style={{ overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border-subtle)', background: 'rgba(255, 255, 255, 0.02)' }}>
+                      <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Timestamp</th>
+                      <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Actor</th>
+                      <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Action</th>
+                      <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Target</th>
+                      <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600, textAlign: 'right' }}>Mutation Diff</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {auditLogs.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} style={{ padding: '48px 16px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                          <div style={{ fontSize: '2rem', marginBottom: '8px' }}>📜</div>
+                          <div style={{ fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>No Audit Records Found</div>
+                          <div style={{ fontSize: '0.8rem' }}>Configuration mutations will be tracked here automatically.</div>
+                        </td>
+                      </tr>
+                    ) : (
+                      auditLogs.map((log) => {
+                        const isExpanded = expandedAuditId === log.id;
+                        const actionBadgeClass =
+                          log.action?.includes('delete') || log.action?.includes('revoke')
+                            ? 'badge-rose'
+                            : log.action?.includes('create') || log.action?.includes('rotate')
+                            ? 'badge-emerald'
+                            : 'badge-cyan';
+
+                        return (
+                          <React.Fragment key={log.id}>
+                            <tr
+                              onClick={() => setExpandedAuditId(isExpanded ? null : log.id)}
+                              style={{
+                                borderBottom: '1px solid rgba(255, 255, 255, 0.04)',
+                                cursor: 'pointer',
+                                background: isExpanded ? 'rgba(99, 102, 241, 0.08)' : 'transparent',
+                                transition: 'background 0.15s ease',
+                              }}
+                            >
+                              <td style={{ padding: '12px 16px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>
+                                {new Date(log.timestamp).toLocaleString()}
+                              </td>
+                              <td style={{ padding: '12px 16px', color: '#f8fafc', fontWeight: 500 }}>
+                                {log.actor}
+                              </td>
+                              <td style={{ padding: '12px 16px' }}>
+                                <span className={`badge ${actionBadgeClass}`} style={{ fontSize: '0.75rem' }}>
+                                  {log.action}
+                                </span>
+                              </td>
+                              <td style={{ padding: '12px 16px', color: 'var(--accent-cyan)', fontFamily: 'monospace' }}>
+                                {log.target}
+                              </td>
+                              <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                                <button className="btn-secondary" style={{ padding: '2px 8px', fontSize: '0.75rem' }}>
+                                  {isExpanded ? '▲ Hide Diff' : '▼ View Diff'}
+                                </button>
+                              </td>
+                            </tr>
+                            {isExpanded && (
+                              <tr style={{ background: 'rgba(15, 23, 42, 0.6)', borderBottom: '1px solid var(--border-subtle)' }}>
+                                <td colSpan={5} style={{ padding: '16px 24px' }}>
+                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginBottom: '6px' }}>MUTATION DIFF (SECRETS REDACTED)</div>
+                                  <pre style={{ background: 'rgba(0,0,0,0.5)', padding: '12px', borderRadius: '8px', fontSize: '0.8rem', color: '#38bdf8', overflowX: 'auto', margin: 0 }}>
+                                    {JSON.stringify(log.diff, null, 2)}
+                                  </pre>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {/* Other Tabs */}
-          {activeTab !== 'projects' && activeTab !== 'mcp-servers' && activeTab !== 'gateways' && activeTab !== 'logs' && (
+          {activeTab !== 'projects' && activeTab !== 'mcp-servers' && activeTab !== 'gateways' && activeTab !== 'logs' && activeTab !== 'audit' && (
             <div className="glass-panel" style={{ padding: '40px', textAlign: 'center' }}>
               <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>🚧</div>
               <h3 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '8px' }}>
@@ -1670,6 +1895,59 @@ export default function ConsoleDashboard() {
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Rotated Gateway Secret */}
+      {rotatedSecretModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0, 0, 0, 0.75)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}>
+          <div className="glass-panel" style={{ width: '100%', maxWidth: '520px', padding: '32px' }}>
+            <h3 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#f8fafc', marginBottom: '8px' }}>
+              🔑 Gateway Secret Rotated
+            </h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
+              The secret for gateway <strong>{rotatedSecretModal.gatewayName}</strong> has been regenerated.
+            </p>
+
+            <div style={{ background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.3)', padding: '12px', borderRadius: '8px', marginBottom: '16px', color: '#fda4af', fontSize: '0.8rem' }}>
+              ⚠️ <strong>Save this secret immediately.</strong> It will NEVER be shown again in the console or logs.
+            </div>
+
+            <div style={{ background: 'rgba(0,0,0,0.4)', padding: '14px', borderRadius: '8px', marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <code style={{ fontSize: '0.95rem', color: 'var(--accent-cyan)', wordBreak: 'break-all' }}>
+                {rotatedSecretModal.secret}
+              </code>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(rotatedSecretModal.secret);
+                  showBanner('Secret copied to clipboard!', 'success');
+                }}
+                className="btn-secondary"
+                style={{ fontSize: '0.78rem', padding: '4px 8px', marginLeft: '12px', whiteSpace: 'nowrap' }}
+              >
+                📋 Copy
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setRotatedSecretModal(null)}
+                className="btn-primary"
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}

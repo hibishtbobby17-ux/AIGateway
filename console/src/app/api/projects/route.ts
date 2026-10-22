@@ -77,7 +77,18 @@ export async function POST(req: NextRequest) {
       RETURNING id, org_id, name, slug, status, settings, config_version, created_at, updated_at
     `, [session.orgId, name.trim(), cleanSlug, JSON.stringify(settings || {})]);
 
-    return NextResponse.json({ project: insRes.rows[0] }, { status: 201 });
+    const createdProject = insRes.rows[0];
+
+    const { logAudit } = await import('@/lib/audit');
+    await logAudit({
+      orgId: session.orgId,
+      actor: session.email,
+      action: 'project.create',
+      target: `project:${createdProject.slug} (${createdProject.id})`,
+      diff: { name: createdProject.name, slug: createdProject.slug, status: createdProject.status },
+    });
+
+    return NextResponse.json({ project: createdProject }, { status: 201 });
   } catch (err: any) {
     console.error('Failed to create project:', err);
     return NextResponse.json({ error: err.message || 'Server error' }, { status: 500 });

@@ -1,4 +1,4 @@
-"use strict";(()=>{var e={};e.id=871,e.ids=[871],e.modules={399:e=>{e.exports=require("next/dist/compiled/next-server/app-page.runtime.prod.js")},517:e=>{e.exports=require("next/dist/compiled/next-server/app-route.runtime.prod.js")},8893:e=>{e.exports=require("buffer")},4770:e=>{e.exports=require("crypto")},6162:e=>{e.exports=require("stream")},1764:e=>{e.exports=require("util")},8678:e=>{e.exports=import("pg")},1097:(e,t,a)=>{a.a(e,async(e,r)=>{try{a.r(t),a.d(t,{originalPathname:()=>U,patchFetch:()=>o,requestAsyncStorage:()=>L,routeModule:()=>N,serverHooks:()=>d,staticGenerationAsyncStorage:()=>A});var s=a(9303),T=a(8716),E=a(670),i=a(2593),n=e([i]);i=(n.then?(await n)():n)[0];let N=new s.AppRouteRouteModule({definition:{kind:T.x.APP_ROUTE,page:"/api/projects/route",pathname:"/api/projects",filename:"route",bundlePath:"app/api/projects/route"},resolvedPagePath:"C:\\Users\\Administrator\\Downloads\\project\\project_alpha\\console\\src\\app\\api\\projects\\route.ts",nextConfigOutput:"standalone",userland:i}),{requestAsyncStorage:L,staticGenerationAsyncStorage:A,serverHooks:d}=N,U="/api/projects/route";function o(){return(0,E.patchFetch)({serverHooks:d,staticGenerationAsyncStorage:A})}r()}catch(e){r(e)}})},2593:(e,t,a)=>{a.a(e,async(e,r)=>{try{a.r(t),a.d(t,{GET:()=>n,POST:()=>o,dynamic:()=>N});var s=a(7070),T=a(469),E=a(1183),i=e([T,E]);[T,E]=i.then?(await i)():i;let N="force-dynamic";async function n(e){try{let t=(0,E.v)(e);if(!t)return s.NextResponse.json({error:"Unauthorized"},{status:401});await (0,T.q)();let a=await T.d.query(`
+"use strict";(()=>{var e={};e.id=871,e.ids=[871],e.modules={399:e=>{e.exports=require("next/dist/compiled/next-server/app-page.runtime.prod.js")},517:e=>{e.exports=require("next/dist/compiled/next-server/app-route.runtime.prod.js")},8893:e=>{e.exports=require("buffer")},4770:e=>{e.exports=require("crypto")},6162:e=>{e.exports=require("stream")},1764:e=>{e.exports=require("util")},8678:e=>{e.exports=import("pg")},1097:(e,t,a)=>{a.a(e,async(e,r)=>{try{a.r(t),a.d(t,{originalPathname:()=>U,patchFetch:()=>N,requestAsyncStorage:()=>L,routeModule:()=>n,serverHooks:()=>d,staticGenerationAsyncStorage:()=>A});var T=a(9303),s=a(8716),E=a(670),i=a(2593),o=e([i]);i=(o.then?(await o)():o)[0];let n=new T.AppRouteRouteModule({definition:{kind:s.x.APP_ROUTE,page:"/api/projects/route",pathname:"/api/projects",filename:"route",bundlePath:"app/api/projects/route"},resolvedPagePath:"C:\\Users\\Administrator\\Downloads\\project\\project_alpha\\console\\src\\app\\api\\projects\\route.ts",nextConfigOutput:"standalone",userland:i}),{requestAsyncStorage:L,staticGenerationAsyncStorage:A,serverHooks:d}=n,U="/api/projects/route";function N(){return(0,E.patchFetch)({serverHooks:d,staticGenerationAsyncStorage:A})}r()}catch(e){r(e)}})},2593:(e,t,a)=>{a.a(e,async(e,r)=>{try{a.r(t),a.d(t,{GET:()=>o,POST:()=>N,dynamic:()=>n});var T=a(7070),s=a(469),E=a(1183),i=e([s,E]);[s,E]=i.then?(await i)():i;let n="force-dynamic";async function o(e){try{let t=(0,E.v)(e);if(!t)return T.NextResponse.json({error:"Unauthorized"},{status:401});await (0,s.q)();let a=await s.d.query(`
       SELECT 
         p.id,
         p.org_id,
@@ -15,11 +15,11 @@
       WHERE p.org_id = $1
       GROUP BY p.id
       ORDER BY p.created_at ASC
-    `,[t.orgId]);return s.NextResponse.json({projects:a.rows})}catch(e){return console.error("Failed to list projects:",e),s.NextResponse.json({error:e.message||"Database query error"},{status:500})}}async function o(e){try{let t=(0,E.v)(e);if(!t)return s.NextResponse.json({error:"Unauthorized"},{status:401});let{name:a,slug:r,settings:i}=await e.json();if(!a||!a.trim())return s.NextResponse.json({error:"Project name is required"},{status:400});let n=(r||a).toLowerCase().trim().replace(/[^a-z0-9-_]/g,"-").replace(/-+/g,"-").replace(/^-|-$/g,"");if(!n)return s.NextResponse.json({error:"Valid slug is required"},{status:400});if(await (0,T.q)(),(await T.d.query("SELECT id FROM projects WHERE slug = $1",[n])).rows.length>0)return s.NextResponse.json({error:`Project slug "${n}" is already taken`},{status:409});let o=await T.d.query(`
+    `,[t.orgId]);return T.NextResponse.json({projects:a.rows})}catch(e){return console.error("Failed to list projects:",e),T.NextResponse.json({error:e.message||"Database query error"},{status:500})}}async function N(e){try{let t=(0,E.v)(e);if(!t)return T.NextResponse.json({error:"Unauthorized"},{status:401});let{name:r,slug:i,settings:o}=await e.json();if(!r||!r.trim())return T.NextResponse.json({error:"Project name is required"},{status:400});let N=(i||r).toLowerCase().trim().replace(/[^a-z0-9-_]/g,"-").replace(/-+/g,"-").replace(/^-|-$/g,"");if(!N)return T.NextResponse.json({error:"Valid slug is required"},{status:400});if(await (0,s.q)(),(await s.d.query("SELECT id FROM projects WHERE slug = $1",[N])).rows.length>0)return T.NextResponse.json({error:`Project slug "${N}" is already taken`},{status:409});let n=(await s.d.query(`
       INSERT INTO projects (org_id, name, slug, status, settings, config_version)
-      VALUES ($1, $2, $3, 'active', $4, 1)
+      VALUES ($1, $2, $3, 'active', $4, (SELECT COALESCE(MAX(config_version), 0) + 1 FROM projects))
       RETURNING id, org_id, name, slug, status, settings, config_version, created_at, updated_at
-    `,[t.orgId,a.trim(),n,JSON.stringify(i||{})]);return s.NextResponse.json({project:o.rows[0]},{status:201})}catch(e){return console.error("Failed to create project:",e),s.NextResponse.json({error:e.message||"Server error"},{status:500})}}r()}catch(e){r(e)}})},469:(e,t,a)=>{a.a(e,async(e,r)=>{try{a.d(t,{d:()=>N,q:()=>n});var s=a(8678),T=a(2023),E=a.n(T),i=e([s]);s=(i.then?(await i)():i)[0];let o=process.env.DATABASE_URL||`postgres://${process.env.POSTGRES_USER||"gateway"}:${process.env.POSTGRES_PASSWORD||"gateway"}@${process.env.POSTGRES_HOST||"localhost"}:${process.env.POSTGRES_PORT||"5432"}/${process.env.POSTGRES_DB||"gateway_dev"}?sslmode=disable`,N=new s.Pool({connectionString:o,max:10,idleTimeoutMillis:3e4,connectionTimeoutMillis:5e3}),L=!1;async function n(){if(L)return;let e=await N.connect();try{let t;await e.query("BEGIN"),await e.query(`
+    `,[t.orgId,r.trim(),N,JSON.stringify(o||{})])).rows[0],{logAudit:L}=await a.e(662).then(a.bind(a,7662));return await L({orgId:t.orgId,actor:t.email,action:"project.create",target:`project:${n.slug} (${n.id})`,diff:{name:n.name,slug:n.slug,status:n.status}}),T.NextResponse.json({project:n},{status:201})}catch(e){return console.error("Failed to create project:",e),T.NextResponse.json({error:e.message||"Server error"},{status:500})}}r()}catch(e){r(e)}})},469:(e,t,a)=>{a.a(e,async(e,r)=>{try{a.d(t,{d:()=>n,q:()=>o});var T=a(8678),s=a(2023),E=a.n(s),i=e([T]);T=(i.then?(await i)():i)[0];let N=process.env.DATABASE_URL||`postgres://${process.env.POSTGRES_USER||"gateway"}:${process.env.POSTGRES_PASSWORD||"gateway"}@${process.env.POSTGRES_HOST||"localhost"}:${process.env.POSTGRES_PORT||"5432"}/${process.env.POSTGRES_DB||"gateway_dev"}?sslmode=disable`,n=new T.Pool({connectionString:N,max:10,idleTimeoutMillis:3e4,connectionTimeoutMillis:5e3}),L=!1;async function o(){if(L)return;let e=await n.connect();try{let t;await e.query("BEGIN"),await e.query(`
       CREATE TABLE IF NOT EXISTS organizations (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         name VARCHAR(255) NOT NULL,
@@ -96,6 +96,8 @@
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+      DROP INDEX IF EXISTS idx_oauth_configs_server;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_oauth_configs_server ON oauth_configs(mcp_server_id);
     `),await e.query(`
       CREATE TABLE IF NOT EXISTS oauth_tokens (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -109,6 +111,8 @@
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+      DROP INDEX IF EXISTS idx_oauth_tokens_server;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_oauth_tokens_server ON oauth_tokens(mcp_server_id);
     `),await e.query(`
       CREATE TABLE IF NOT EXISTS gateway_instances (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -161,17 +165,41 @@
         timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         diff JSONB NOT NULL DEFAULT '{}'::jsonb
       );
+    `),await e.query(`
+      CREATE TABLE IF NOT EXISTS gateway_logs (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        event_id VARCHAR(128) NOT NULL,
+        project VARCHAR(100) NOT NULL,
+        mcp_server VARCHAR(255),
+        tool VARCHAR(255),
+        client_id VARCHAR(255),
+        status VARCHAR(50) NOT NULL,
+        latency_ms DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+        bytes_in BIGINT NOT NULL DEFAULT 0,
+        bytes_out BIGINT NOT NULL DEFAULT 0,
+        trace_id VARCHAR(128),
+        error TEXT,
+        attributes JSONB NOT NULL DEFAULT '{}'::jsonb,
+        timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_gateway_logs_event_id ON gateway_logs (event_id);
+      CREATE INDEX IF NOT EXISTS idx_gateway_logs_project_ts ON gateway_logs (project, timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_gateway_logs_timestamp ON gateway_logs (timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_gateway_logs_trace_id ON gateway_logs (trace_id);
+      CREATE INDEX IF NOT EXISTS idx_gateway_logs_server ON gateway_logs (mcp_server);
+      CREATE INDEX IF NOT EXISTS idx_gateway_logs_tool ON gateway_logs (tool);
     `);let a=await e.query("SELECT id FROM organizations LIMIT 1");t=0===a.rows.length?(await e.query(`
         INSERT INTO organizations (name, slug)
         VALUES ('Default Enterprise', 'default-enterprise')
         RETURNING id
-      `)).rows[0].id:a.rows[0].id;let r=process.env.ADMIN_EMAIL||"admin@aigateway.local",s=process.env.ADMIN_PASSWORD||"Admin123!@#",T=await e.query("SELECT id FROM users WHERE email = $1",[r]);if(0===T.rows.length){let a=await E().genSalt(10),T=await E().hash(s,a);await e.query(`
+      `)).rows[0].id:a.rows[0].id;let r=process.env.ADMIN_EMAIL||"admin@aigateway.local",T=process.env.ADMIN_PASSWORD||"Admin123!@#",s=await e.query("SELECT id FROM users WHERE email = $1",[r]);if(0===s.rows.length){let a=await E().genSalt(10),s=await E().hash(T,a);await e.query(`
         INSERT INTO users (org_id, email, name, password_hash, role, status)
         VALUES ($1, $2, 'Primary Administrator', $3, 'admin', 'active')
-      `,[t,r,T])}let i=await e.query("SELECT id FROM projects LIMIT 1");0===i.rows.length&&await e.query(`
+      `,[t,r,s])}let i=await e.query("SELECT id FROM projects LIMIT 1");0===i.rows.length&&await e.query(`
         INSERT INTO projects (org_id, name, slug, status, settings, config_version)
         VALUES ($1, 'Production Gateway', 'production', 'active', '{"rate_limit": 1000}', 1)
-      `,[t]);let n=await e.query("SELECT id FROM gateway_instances WHERE name = $1",["gateway-default-01"]);if(0===n.rows.length){let t=await E().genSalt(10),a=await E().hash("dev-gateway-secret",t);await e.query(`
+      `,[t]);let o=await e.query("SELECT id FROM gateway_instances WHERE name = $1",["gateway-default-01"]);if(0===o.rows.length){let t=await E().genSalt(10),a=await E().hash("dev-gateway-secret",t);await e.query(`
         INSERT INTO gateway_instances (name, secret_hash, status, version)
         VALUES ('gateway-default-01', $1, 'registered', '1.0.0')
-      `,[a])}await e.query("COMMIT"),L=!0}catch(t){throw await e.query("ROLLBACK"),t}finally{e.release()}}r()}catch(e){r(e)}})},1183:(e,t,a)=>{a.a(e,async(e,r)=>{try{a.d(t,{v:()=>E});var s=a(5456),T=e([s]);function E(e){let t=e.cookies.get("gateway_console_session")?.value;if(!t){let a=e.headers.get("authorization");a?.startsWith("Bearer ")&&(t=a.substring(7))}return t?(0,s.g$)(t):null}s=(T.then?(await T)():T)[0],r()}catch(e){r(e)}})},5456:(e,t,a)=>{a.a(e,async(e,r)=>{try{a.d(t,{So:()=>A,g$:()=>L,uy:()=>N});var s=a(1482),T=a.n(s),E=a(2023),i=a.n(E),n=a(469),o=e([n]);n=(o.then?(await o)():o)[0];let d=process.env.CONSOLE_JWT_SECRET||"dev-console-secret-super-secure-key-32bytes-min";function N(e){return T().sign(e,d,{expiresIn:"7d"})}function L(e){try{return T().verify(e,d)}catch{return null}}async function A(e,t){await (0,n.q)();let a=await n.d.query("SELECT id, org_id, email, name, password_hash, role, status FROM users WHERE email = $1",[e.toLowerCase().trim()]);if(0===a.rows.length)return null;let r=a.rows[0];return"active"===r.status&&await i().compare(t,r.password_hash)?{userId:r.id,orgId:r.org_id,email:r.email,name:r.name,role:r.role}:null}r()}catch(e){r(e)}})}};var t=require("../../../webpack-runtime.js");t.C(e);var a=e=>t(t.s=e),r=t.X(0,[276,972,23,482],()=>a(1097));module.exports=r})();
+      `,[a])}await e.query("COMMIT"),L=!0}catch(t){throw await e.query("ROLLBACK"),t}finally{e.release()}}r()}catch(e){r(e)}})},1183:(e,t,a)=>{a.a(e,async(e,r)=>{try{a.d(t,{v:()=>E});var T=a(5456),s=e([T]);function E(e){let t=e.cookies.get("gateway_console_session")?.value;if(!t){let a=e.headers.get("authorization");a?.startsWith("Bearer ")&&(t=a.substring(7))}return t?(0,T.g$)(t):null}T=(s.then?(await s)():s)[0],r()}catch(e){r(e)}})},5456:(e,t,a)=>{a.a(e,async(e,r)=>{try{a.d(t,{So:()=>A,g$:()=>L,uy:()=>n});var T=a(1482),s=a.n(T),E=a(2023),i=a.n(E),o=a(469),N=e([o]);o=(N.then?(await N)():N)[0];let d=process.env.CONSOLE_JWT_SECRET||"dev-console-secret-super-secure-key-32bytes-min";function n(e){return s().sign(e,d,{expiresIn:"7d"})}function L(e){try{return s().verify(e,d)}catch{return null}}async function A(e,t){await (0,o.q)();let a=await o.d.query("SELECT id, org_id, email, name, password_hash, role, status FROM users WHERE email = $1",[e.toLowerCase().trim()]);if(0===a.rows.length)return null;let r=a.rows[0];return"active"===r.status&&await i().compare(t,r.password_hash)?{userId:r.id,orgId:r.org_id,email:r.email,name:r.name,role:r.role}:null}r()}catch(e){r(e)}})}};var t=require("../../../webpack-runtime.js");t.C(e);var a=e=>t(t.s=e),r=t.X(0,[276,972,482,23],()=>a(1097));module.exports=r})();

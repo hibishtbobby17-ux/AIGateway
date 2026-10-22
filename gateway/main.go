@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -88,6 +89,12 @@ type Gateway struct {
 	aggregator    *MCPAggregator
 	oauth         *OAuthManager
 	spooler       *Spooler
+	rateLimiter   *TokenBucketLimiter
+	breakers      *BreakerRegistry
+	metrics       *MetricsCollector
+	inFlight      int64
+	maxInFlight   int64
+	maxBodySize   int64
 	mu            sync.RWMutex
 	token         string
 	tokenExpiry   time.Time
@@ -127,7 +134,16 @@ func main() {
 		configCachePath = "last_good_config.json"
 	}
 
+	maxInFlight := int64(1000)
+	if envMax := os.Getenv("GATEWAY_MAX_IN_FLIGHT"); envMax != "" {
+		if val, err := strconv.ParseInt(envMax, 10, 64); err == nil && val > 0 {
+			maxInFlight = val
+		}
+	}
+
+	breakers := NewBreakerRegistry()
 	pool := NewDownstreamPool(consoleURL, logger)
+	pool.SetBreakerRegistry(breakers)
 	aggregator := NewMCPAggregator(pool, logger)
 
 	gw := &Gateway{
@@ -140,9 +156,17 @@ func main() {
 		httpClient: &http.Client{
 			Timeout: 15 * time.Second,
 		},
-		pool:       pool,
-		aggregator: aggregator,
+		pool:        pool,
+		aggregator:  aggregator,
+		breakers:    breakers,
+		rateLimiter: NewTokenBucketLimiter(600, 50),
+		maxInFlight: maxInFlight,
+		maxBodySize: 5 * 1024 * 1024, // 5MB
 	}
+
+	metrics := NewMetricsCollector(breakers, &gw.inFlight)
+	gw.metrics = metrics
+	pool.SetMetricsCollector(metrics)
 
 	spooler := NewSpooler(SpoolerConfig{
 		IngestURL:     ingestURL,
@@ -175,6 +199,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", gw.handleHealthz)
 	mux.HandleFunc("GET /readyz", gw.handleReadyz)
+	mux.HandleFunc("GET /metrics", gw.metrics.HandleMetrics)
 	mux.HandleFunc("POST /p/{slug}/mcp", gw.handleMCP)
 	mux.HandleFunc("GET /p/{slug}/mcp", gw.handleMCP)
 	mux.HandleFunc("GET /p/{slug}/.well-known/oauth-protected-resource", gw.handleOAuthProtectedResource)
@@ -230,6 +255,13 @@ func (g *Gateway) getOAuth() *OAuthManager {
 	return g.oauth
 }
 
+func (g *Gateway) getRateLimiter() *TokenBucketLimiter {
+	if g.rateLimiter == nil {
+		g.rateLimiter = NewTokenBucketLimiter(600, 50)
+	}
+	return g.rateLimiter
+}
+
 func (g *Gateway) handleOAuthProtectedResource(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	cfg := g.currentCfg.Load()
@@ -277,6 +309,22 @@ func (g *Gateway) handleReadyz(w http.ResponseWriter, r *http.Request) {
 }
 
 func (g *Gateway) handleMCP(w http.ResponseWriter, r *http.Request) {
+	// 1. Load Shedding Concurrency Guard
+	currentInFlight := atomic.AddInt64(&g.inFlight, 1)
+	defer atomic.AddInt64(&g.inFlight, -1)
+
+	if g.maxInFlight > 0 && currentInFlight > g.maxInFlight {
+		if g.metrics != nil {
+			g.metrics.RecordLoadShedding()
+		}
+		w.Header().Set("Retry-After", "1")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		resp := NewJSONRPCError(nil, ErrCodeDownstream, "Load shedding: maximum concurrent requests reached", nil)
+		_ = json.NewEncoder(w).Encode(resp)
+		return
+	}
+
 	slug := r.PathValue("slug")
 	cfg := g.currentCfg.Load()
 
@@ -303,11 +351,16 @@ func (g *Gateway) handleMCP(w http.ResponseWriter, r *http.Request) {
 	errStr := ""
 	mcpServer := ""
 	toolName := ""
+	rpcMethod := r.Method
 	bytesIn := 0
 	bytesOut := 0
 
 	defer func() {
 		latency := float64(time.Since(startTime).Microseconds()) / 1000.0
+		durationSec := time.Since(startTime).Seconds()
+		if g.metrics != nil {
+			g.metrics.RecordRequest(slug, rpcMethod, statusStr, durationSec)
+		}
 		if g.spooler != nil {
 			g.spooler.Emit(LogEvent{
 				EventID:    eventID,
@@ -352,6 +405,38 @@ func (g *Gateway) handleMCP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 2. Token Bucket Rate Limiting per Project/Client
+	var customRPM int
+	if proj.Settings != nil {
+		if m, ok := proj.Settings.(map[string]interface{}); ok {
+			if rl, ok := m["rate_limit"].(float64); ok && rl > 0 {
+				customRPM = int(rl)
+			}
+		}
+	}
+	limiterKey := fmt.Sprintf("%s:%s", slug, clientID)
+	limitRes := g.getRateLimiter().Allow(limiterKey, customRPM, 0)
+
+	w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%d", limitRes.Limit))
+	w.Header().Set("X-RateLimit-Remaining", fmt.Sprintf("%d", limitRes.Remaining))
+	w.Header().Set("X-RateLimit-Reset", fmt.Sprintf("%d", int(limitRes.ResetDuration.Seconds())))
+
+	if !limitRes.Allowed {
+		if g.metrics != nil {
+			g.metrics.RecordRateLimited(slug, clientID)
+		}
+		statusStr = "429"
+		errStr = "Rate limit exceeded"
+		w.Header().Set("Retry-After", fmt.Sprintf("%d", int(limitRes.RetryAfter.Seconds())))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		resp := NewJSONRPCError(nil, ErrCodeInvalidRequest, fmt.Sprintf("Rate limit exceeded. Retry after %v", limitRes.RetryAfter), nil)
+		respBytes, _ := json.Marshal(resp)
+		bytesOut = len(respBytes)
+		_, _ = w.Write(respBytes)
+		return
+	}
+
 	// Inbound OAuth Bearer Auth Enforcement
 	if proj.InboundAuth.Mode == "oauth" {
 		authHeader := r.Header.Get("Authorization")
@@ -383,23 +468,42 @@ func (g *Gateway) handleMCP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Read client payload
+	// 3. Request Body Size Limits
+	maxBody := g.maxBodySize
+	if maxBody <= 0 {
+		maxBody = 5 * 1024 * 1024
+	}
+	if r.ContentLength > maxBody {
+		statusStr = "413"
+		errStr = fmt.Sprintf("Payload too large: Content-Length %d exceeds limit %d", r.ContentLength, maxBody)
+		w.Header().Set("Connection", "close")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusRequestEntityTooLarge)
+		resp := NewJSONRPCError(nil, ErrCodeParseError, "Payload too large", errStr)
+		respBytes, _ := json.Marshal(resp)
+		bytesOut = len(respBytes)
+		_, _ = w.Write(respBytes)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 	body, err := io.ReadAll(r.Body)
 	bytesIn = len(body)
 	if err != nil {
-		statusStr = "400"
-		errStr = err.Error()
-		resp := NewJSONRPCError(nil, ErrCodeParseError, "Failed to read request body", err.Error())
+		statusStr = "413"
+		errStr = "Payload too large or unreadable: " + err.Error()
+		w.Header().Set("Connection", "close")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusRequestEntityTooLarge)
+		resp := NewJSONRPCError(nil, ErrCodeParseError, "Payload too large or unreadable", err.Error())
 		respBytes, _ := json.Marshal(resp)
 		bytesOut = len(respBytes)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write(respBytes)
 		return
 	}
 
 	// Allow empty GET for health/capabilities discovery
 	if len(body) == 0 && r.Method == http.MethodGet {
+		rpcMethod = "initialize"
 		resp := g.getAggregator().HandleInitialize(&JSONRPCRequest{ID: 1}, &proj)
 		respBytes, _ := json.Marshal(resp)
 		bytesOut = len(respBytes)
@@ -421,6 +525,8 @@ func (g *Gateway) handleMCP(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(respBytes)
 		return
 	}
+
+	rpcMethod = rpcReq.Method
 
 	// Notifications have no ID and start with notifications/
 	if rpcReq.ID == nil && strings.HasPrefix(rpcReq.Method, "notifications/") {

@@ -90,7 +90,17 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ project: updRes.rows[0] });
+    const updatedProject = updRes.rows[0];
+    const { logAudit } = await import('@/lib/audit');
+    await logAudit({
+      orgId: session.orgId,
+      actor: session.email,
+      action: 'project.update',
+      target: `project:${updatedProject.slug} (${updatedProject.id})`,
+      diff: { name, status, settings },
+    });
+
+    return NextResponse.json({ project: updatedProject });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
@@ -105,13 +115,22 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
 
     await initDatabase();
     const delRes = await pool.query(
-      'DELETE FROM projects WHERE id = $1 AND org_id = $2 RETURNING id',
+      'DELETE FROM projects WHERE id = $1 AND org_id = $2 RETURNING id, slug, name',
       [params.id, session.orgId]
     );
 
     if (delRes.rows.length === 0) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
+
+    const deleted = delRes.rows[0];
+    const { logAudit } = await import('@/lib/audit');
+    await logAudit({
+      orgId: session.orgId,
+      actor: session.email,
+      action: 'project.delete',
+      target: `project:${deleted.slug} (${deleted.id})`,
+    });
 
     return NextResponse.json({ success: true, deleted_id: params.id });
   } catch (err: any) {

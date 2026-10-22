@@ -1,4 +1,4 @@
-"use strict";(()=>{var e={};e.id=788,e.ids=[788],e.modules={399:e=>{e.exports=require("next/dist/compiled/next-server/app-page.runtime.prod.js")},517:e=>{e.exports=require("next/dist/compiled/next-server/app-route.runtime.prod.js")},8893:e=>{e.exports=require("buffer")},4770:e=>{e.exports=require("crypto")},6162:e=>{e.exports=require("stream")},1764:e=>{e.exports=require("util")},8678:e=>{e.exports=import("pg")},5521:(e,t,a)=>{a.a(e,async(e,T)=>{try{a.r(t),a.d(t,{originalPathname:()=>d,patchFetch:()=>L,requestAsyncStorage:()=>o,routeModule:()=>N,serverHooks:()=>U,staticGenerationAsyncStorage:()=>A});var r=a(9303),E=a(8716),i=a(670),s=a(7882),n=e([s]);s=(n.then?(await n)():n)[0];let N=new r.AppRouteRouteModule({definition:{kind:E.x.APP_ROUTE,page:"/api/auth/me/route",pathname:"/api/auth/me",filename:"route",bundlePath:"app/api/auth/me/route"},resolvedPagePath:"C:\\Users\\Administrator\\Downloads\\project\\project_alpha\\console\\src\\app\\api\\auth\\me\\route.ts",nextConfigOutput:"standalone",userland:s}),{requestAsyncStorage:o,staticGenerationAsyncStorage:A,serverHooks:U}=N,d="/api/auth/me/route";function L(){return(0,i.patchFetch)({serverHooks:U,staticGenerationAsyncStorage:A})}T()}catch(e){T(e)}})},7882:(e,t,a)=>{a.a(e,async(e,T)=>{try{a.r(t),a.d(t,{GET:()=>n,dynamic:()=>L});var r=a(7070),E=a(5456),i=a(469),s=e([E,i]);[E,i]=s.then?(await s)():s;let L="force-dynamic";async function n(e){try{let t=e.cookies.get("gateway_console_session")?.value;if(!t){let a=e.headers.get("authorization");a?.startsWith("Bearer ")&&(t=a.substring(7))}if(!t)return r.NextResponse.json({error:"Unauthorized"},{status:401});let a=(0,E.g$)(t);if(!a)return r.NextResponse.json({error:"Invalid or expired session"},{status:401});await (0,i.q)();let T=(await i.d.query("SELECT id, name, slug FROM organizations WHERE id = $1",[a.orgId])).rows[0]||null;return r.NextResponse.json({user:a,organization:T})}catch(e){return console.error("Session verification error:",e),r.NextResponse.json({error:"Internal server error"},{status:500})}}T()}catch(e){T(e)}})},469:(e,t,a)=>{a.a(e,async(e,T)=>{try{a.d(t,{d:()=>N,q:()=>n});var r=a(8678),E=a(2023),i=a.n(E),s=e([r]);r=(s.then?(await s)():s)[0];let L=process.env.DATABASE_URL||`postgres://${process.env.POSTGRES_USER||"gateway"}:${process.env.POSTGRES_PASSWORD||"gateway"}@${process.env.POSTGRES_HOST||"localhost"}:${process.env.POSTGRES_PORT||"5432"}/${process.env.POSTGRES_DB||"gateway_dev"}?sslmode=disable`,N=new r.Pool({connectionString:L,max:10,idleTimeoutMillis:3e4,connectionTimeoutMillis:5e3}),o=!1;async function n(){if(o)return;let e=await N.connect();try{let t;await e.query("BEGIN"),await e.query(`
+"use strict";(()=>{var e={};e.id=788,e.ids=[788],e.modules={399:e=>{e.exports=require("next/dist/compiled/next-server/app-page.runtime.prod.js")},517:e=>{e.exports=require("next/dist/compiled/next-server/app-route.runtime.prod.js")},8893:e=>{e.exports=require("buffer")},4770:e=>{e.exports=require("crypto")},6162:e=>{e.exports=require("stream")},1764:e=>{e.exports=require("util")},8678:e=>{e.exports=import("pg")},5521:(e,t,a)=>{a.a(e,async(e,T)=>{try{a.r(t),a.d(t,{originalPathname:()=>d,patchFetch:()=>o,requestAsyncStorage:()=>n,routeModule:()=>L,serverHooks:()=>U,staticGenerationAsyncStorage:()=>A});var E=a(9303),r=a(8716),i=a(670),s=a(7882),N=e([s]);s=(N.then?(await N)():N)[0];let L=new E.AppRouteRouteModule({definition:{kind:r.x.APP_ROUTE,page:"/api/auth/me/route",pathname:"/api/auth/me",filename:"route",bundlePath:"app/api/auth/me/route"},resolvedPagePath:"C:\\Users\\Administrator\\Downloads\\project\\project_alpha\\console\\src\\app\\api\\auth\\me\\route.ts",nextConfigOutput:"standalone",userland:s}),{requestAsyncStorage:n,staticGenerationAsyncStorage:A,serverHooks:U}=L,d="/api/auth/me/route";function o(){return(0,i.patchFetch)({serverHooks:U,staticGenerationAsyncStorage:A})}T()}catch(e){T(e)}})},7882:(e,t,a)=>{a.a(e,async(e,T)=>{try{a.r(t),a.d(t,{GET:()=>N,dynamic:()=>o});var E=a(7070),r=a(5456),i=a(469),s=e([r,i]);[r,i]=s.then?(await s)():s;let o="force-dynamic";async function N(e){try{let t=e.cookies.get("gateway_console_session")?.value;if(!t){let a=e.headers.get("authorization");a?.startsWith("Bearer ")&&(t=a.substring(7))}if(!t)return E.NextResponse.json({error:"Unauthorized"},{status:401});let a=(0,r.g$)(t);if(!a)return E.NextResponse.json({error:"Invalid or expired session"},{status:401});await (0,i.q)();let T=(await i.d.query("SELECT id, name, slug FROM organizations WHERE id = $1",[a.orgId])).rows[0]||null;return E.NextResponse.json({user:a,organization:T})}catch(e){return console.error("Session verification error:",e),E.NextResponse.json({error:"Internal server error"},{status:500})}}T()}catch(e){T(e)}})},469:(e,t,a)=>{a.a(e,async(e,T)=>{try{a.d(t,{d:()=>L,q:()=>N});var E=a(8678),r=a(2023),i=a.n(r),s=e([E]);E=(s.then?(await s)():s)[0];let o=process.env.DATABASE_URL||`postgres://${process.env.POSTGRES_USER||"gateway"}:${process.env.POSTGRES_PASSWORD||"gateway"}@${process.env.POSTGRES_HOST||"localhost"}:${process.env.POSTGRES_PORT||"5432"}/${process.env.POSTGRES_DB||"gateway_dev"}?sslmode=disable`,L=new E.Pool({connectionString:o,max:10,idleTimeoutMillis:3e4,connectionTimeoutMillis:5e3}),n=!1;async function N(){if(n)return;let e=await L.connect();try{let t;await e.query("BEGIN"),await e.query(`
       CREATE TABLE IF NOT EXISTS organizations (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         name VARCHAR(255) NOT NULL,
@@ -75,6 +75,8 @@
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+      DROP INDEX IF EXISTS idx_oauth_configs_server;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_oauth_configs_server ON oauth_configs(mcp_server_id);
     `),await e.query(`
       CREATE TABLE IF NOT EXISTS oauth_tokens (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -88,6 +90,8 @@
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+      DROP INDEX IF EXISTS idx_oauth_tokens_server;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_oauth_tokens_server ON oauth_tokens(mcp_server_id);
     `),await e.query(`
       CREATE TABLE IF NOT EXISTS gateway_instances (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -140,17 +144,41 @@
         timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         diff JSONB NOT NULL DEFAULT '{}'::jsonb
       );
+    `),await e.query(`
+      CREATE TABLE IF NOT EXISTS gateway_logs (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        event_id VARCHAR(128) NOT NULL,
+        project VARCHAR(100) NOT NULL,
+        mcp_server VARCHAR(255),
+        tool VARCHAR(255),
+        client_id VARCHAR(255),
+        status VARCHAR(50) NOT NULL,
+        latency_ms DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+        bytes_in BIGINT NOT NULL DEFAULT 0,
+        bytes_out BIGINT NOT NULL DEFAULT 0,
+        trace_id VARCHAR(128),
+        error TEXT,
+        attributes JSONB NOT NULL DEFAULT '{}'::jsonb,
+        timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_gateway_logs_event_id ON gateway_logs (event_id);
+      CREATE INDEX IF NOT EXISTS idx_gateway_logs_project_ts ON gateway_logs (project, timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_gateway_logs_timestamp ON gateway_logs (timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_gateway_logs_trace_id ON gateway_logs (trace_id);
+      CREATE INDEX IF NOT EXISTS idx_gateway_logs_server ON gateway_logs (mcp_server);
+      CREATE INDEX IF NOT EXISTS idx_gateway_logs_tool ON gateway_logs (tool);
     `);let a=await e.query("SELECT id FROM organizations LIMIT 1");t=0===a.rows.length?(await e.query(`
         INSERT INTO organizations (name, slug)
         VALUES ('Default Enterprise', 'default-enterprise')
         RETURNING id
-      `)).rows[0].id:a.rows[0].id;let T=process.env.ADMIN_EMAIL||"admin@aigateway.local",r=process.env.ADMIN_PASSWORD||"Admin123!@#",E=await e.query("SELECT id FROM users WHERE email = $1",[T]);if(0===E.rows.length){let a=await i().genSalt(10),E=await i().hash(r,a);await e.query(`
+      `)).rows[0].id:a.rows[0].id;let T=process.env.ADMIN_EMAIL||"admin@aigateway.local",E=process.env.ADMIN_PASSWORD||"Admin123!@#",r=await e.query("SELECT id FROM users WHERE email = $1",[T]);if(0===r.rows.length){let a=await i().genSalt(10),r=await i().hash(E,a);await e.query(`
         INSERT INTO users (org_id, email, name, password_hash, role, status)
         VALUES ($1, $2, 'Primary Administrator', $3, 'admin', 'active')
-      `,[t,T,E])}let s=await e.query("SELECT id FROM projects LIMIT 1");0===s.rows.length&&await e.query(`
+      `,[t,T,r])}let s=await e.query("SELECT id FROM projects LIMIT 1");0===s.rows.length&&await e.query(`
         INSERT INTO projects (org_id, name, slug, status, settings, config_version)
         VALUES ($1, 'Production Gateway', 'production', 'active', '{"rate_limit": 1000}', 1)
-      `,[t]);let n=await e.query("SELECT id FROM gateway_instances WHERE name = $1",["gateway-default-01"]);if(0===n.rows.length){let t=await i().genSalt(10),a=await i().hash("dev-gateway-secret",t);await e.query(`
+      `,[t]);let N=await e.query("SELECT id FROM gateway_instances WHERE name = $1",["gateway-default-01"]);if(0===N.rows.length){let t=await i().genSalt(10),a=await i().hash("dev-gateway-secret",t);await e.query(`
         INSERT INTO gateway_instances (name, secret_hash, status, version)
         VALUES ('gateway-default-01', $1, 'registered', '1.0.0')
-      `,[a])}await e.query("COMMIT"),o=!0}catch(t){throw await e.query("ROLLBACK"),t}finally{e.release()}}T()}catch(e){T(e)}})},5456:(e,t,a)=>{a.a(e,async(e,T)=>{try{a.d(t,{So:()=>A,g$:()=>o,uy:()=>N});var r=a(1482),E=a.n(r),i=a(2023),s=a.n(i),n=a(469),L=e([n]);n=(L.then?(await L)():L)[0];let U=process.env.CONSOLE_JWT_SECRET||"dev-console-secret-super-secure-key-32bytes-min";function N(e){return E().sign(e,U,{expiresIn:"7d"})}function o(e){try{return E().verify(e,U)}catch{return null}}async function A(e,t){await (0,n.q)();let a=await n.d.query("SELECT id, org_id, email, name, password_hash, role, status FROM users WHERE email = $1",[e.toLowerCase().trim()]);if(0===a.rows.length)return null;let T=a.rows[0];return"active"===T.status&&await s().compare(t,T.password_hash)?{userId:T.id,orgId:T.org_id,email:T.email,name:T.name,role:T.role}:null}T()}catch(e){T(e)}})}};var t=require("../../../../webpack-runtime.js");t.C(e);var a=e=>t(t.s=e),T=t.X(0,[276,972,23,482],()=>a(5521));module.exports=T})();
+      `,[a])}await e.query("COMMIT"),n=!0}catch(t){throw await e.query("ROLLBACK"),t}finally{e.release()}}T()}catch(e){T(e)}})},5456:(e,t,a)=>{a.a(e,async(e,T)=>{try{a.d(t,{So:()=>A,g$:()=>n,uy:()=>L});var E=a(1482),r=a.n(E),i=a(2023),s=a.n(i),N=a(469),o=e([N]);N=(o.then?(await o)():o)[0];let U=process.env.CONSOLE_JWT_SECRET||"dev-console-secret-super-secure-key-32bytes-min";function L(e){return r().sign(e,U,{expiresIn:"7d"})}function n(e){try{return r().verify(e,U)}catch{return null}}async function A(e,t){await (0,N.q)();let a=await N.d.query("SELECT id, org_id, email, name, password_hash, role, status FROM users WHERE email = $1",[e.toLowerCase().trim()]);if(0===a.rows.length)return null;let T=a.rows[0];return"active"===T.status&&await s().compare(t,T.password_hash)?{userId:T.id,orgId:T.org_id,email:T.email,name:T.name,role:T.role}:null}T()}catch(e){T(e)}})}};var t=require("../../../../webpack-runtime.js");t.C(e);var a=e=>t(t.s=e),T=t.X(0,[276,972,482,23],()=>a(5521));module.exports=T})();

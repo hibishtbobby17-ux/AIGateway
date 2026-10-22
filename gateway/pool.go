@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +23,9 @@ type DownstreamPool struct {
 	maxPerHost  int
 	logger      *slog.Logger
 	oauth       *OAuthManager
+	breakers    *BreakerRegistry
+	metrics     *MetricsCollector
+	allowLocal  bool
 }
 
 func NewDownstreamPool(consoleURL string, logger *slog.Logger) *DownstreamPool {
@@ -30,16 +33,18 @@ func NewDownstreamPool(consoleURL string, logger *slog.Logger) *DownstreamPool {
 		logger = slog.Default()
 	}
 
+	allowLocal := os.Getenv("ALLOW_LOCAL_EGRESS") == "true" ||
+		strings.Contains(consoleURL, "localhost") ||
+		strings.Contains(consoleURL, "127.0.0.1") ||
+		strings.Contains(consoleURL, "console:")
+
 	transport := &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
-			Timeout:   5 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
-		MaxIdleConns:        256,
-		MaxIdleConnsPerHost: 64,
-		IdleConnTimeout:     90 * time.Second,
-		TLSHandshakeTimeout: 5 * time.Second,
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           SafeDialContext(allowLocal),
+		MaxIdleConns:          256,
+		MaxIdleConnsPerHost:   64,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   5 * time.Second,
 		ResponseHeaderTimeout: 15 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	}
@@ -52,11 +57,25 @@ func NewDownstreamPool(consoleURL string, logger *slog.Logger) *DownstreamPool {
 		consoleURL: consoleURL,
 		maxPerHost: 50,
 		logger:     logger,
+		breakers:   NewBreakerRegistry(),
+		allowLocal: allowLocal,
 	}
+}
+
+func (p *DownstreamPool) SetAllowLocal(allow bool) {
+	p.allowLocal = allow
 }
 
 func (p *DownstreamPool) SetOAuthManager(oauth *OAuthManager) {
 	p.oauth = oauth
+}
+
+func (p *DownstreamPool) SetBreakerRegistry(reg *BreakerRegistry) {
+	p.breakers = reg
+}
+
+func (p *DownstreamPool) SetMetricsCollector(m *MetricsCollector) {
+	p.metrics = m
 }
 
 // normalizeURL resolves docker network hostnames if running within docker compose
@@ -92,16 +111,35 @@ func generateTraceparent() (string, string) {
 	return fmt.Sprintf("00-%s-%s-01", traceID, spanID), traceID
 }
 
-// Execute sends a JSON-RPC request to a downstream MCP server with pooling, bulkheading, and trace context
+// Execute sends a JSON-RPC request to a downstream MCP server with pooling, bulkheading, circuit breaker, and SSRF guard
 func (p *DownstreamPool) Execute(ctx context.Context, server *MCPServer, rpcReq *JSONRPCRequest) (*JSONRPCResponse, string, error) {
+	traceparent, traceID := generateTraceparent()
+
+	// 1. Circuit Breaker check
+	var cb *CircuitBreaker
+	if p.breakers != nil {
+		cb = p.breakers.Get(server.ID)
+		if err := cb.Allow(); err != nil {
+			return nil, traceID, err
+		}
+	}
+
+	// 2. SSRF Guard Pre-check
+	targetURL := p.normalizeURL(server.URL)
+	allowLocal := p.allowLocal || os.Getenv("ALLOW_LOCAL_EGRESS") == "true" || strings.Contains(p.consoleURL, "localhost") || strings.Contains(p.consoleURL, "127.0.0.1") || strings.Contains(p.consoleURL, "console:")
+	if err := ValidateURL(targetURL, allowLocal); err != nil {
+		if p.metrics != nil {
+			p.metrics.RecordSSRFBlocked()
+		}
+		return nil, traceID, err
+	}
+
+	// 3. Acquire bulkhead concurrency slot
 	release, err := p.acquireBulkhead(server.ID)
 	if err != nil {
 		return nil, "", err
 	}
 	defer release()
-
-	targetURL := p.normalizeURL(server.URL)
-	traceparent, traceID := generateTraceparent()
 
 	rawBody, err := json.Marshal(rpcReq)
 	if err != nil {
@@ -130,6 +168,12 @@ func (p *DownstreamPool) Execute(ctx context.Context, server *MCPServer, rpcReq 
 
 	resp, err := p.client.Do(httpReq)
 	if err != nil {
+		if cb != nil {
+			cb.RecordFailure()
+		}
+		if p.metrics != nil {
+			p.metrics.RecordDownstreamCall(server.Name, "error")
+		}
 		return nil, traceID, fmt.Errorf("downstream connection failed: %w", err)
 	}
 
@@ -139,6 +183,9 @@ func (p *DownstreamPool) Execute(ctx context.Context, server *MCPServer, rpcReq 
 		p.logger.Warn("downstream returned 401, forcing token refresh and retrying once", "server", server.Name)
 		refreshedToken, refErr := p.oauth.GetOutboundToken(ctx, server, true)
 		if refErr != nil {
+			if cb != nil {
+				cb.RecordFailure()
+			}
 			return nil, traceID, fmt.Errorf("token refresh failed for %s: %w", server.Name, refErr)
 		}
 
@@ -153,10 +200,31 @@ func (p *DownstreamPool) Execute(ctx context.Context, server *MCPServer, rpcReq 
 
 		resp, err = p.client.Do(retryReq)
 		if err != nil {
+			if cb != nil {
+				cb.RecordFailure()
+			}
+			if p.metrics != nil {
+				p.metrics.RecordDownstreamCall(server.Name, "error")
+			}
 			return nil, traceID, fmt.Errorf("downstream retry failed: %w", err)
 		}
 	}
 	defer resp.Body.Close()
+
+	if p.metrics != nil {
+		p.metrics.RecordDownstreamCall(server.Name, fmt.Sprintf("%d", resp.StatusCode))
+	}
+
+	// Downstream 5xx errors record breaker failure
+	if resp.StatusCode >= 500 {
+		if cb != nil {
+			cb.RecordFailure()
+		}
+	} else {
+		if cb != nil {
+			cb.RecordSuccess()
+		}
+	}
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

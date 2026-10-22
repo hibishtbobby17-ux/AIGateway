@@ -27,6 +27,18 @@ export async function POST(req: NextRequest) {
 
     await initDatabase();
 
+    const gwCheck = await pool.query(`
+      SELECT id, status, revoked_at FROM gateway_instances WHERE id = $1
+    `, [gatewayId]);
+
+    if (gwCheck.rows.length === 0) {
+      return NextResponse.json({ error: 'Gateway instance not found' }, { status: 404 });
+    }
+
+    if (gwCheck.rows[0].status === 'revoked' || gwCheck.rows[0].revoked_at !== null) {
+      return NextResponse.json({ error: 'Gateway instance has been revoked' }, { status: 403 });
+    }
+
     await pool.query(`
       UPDATE gateway_instances
       SET 

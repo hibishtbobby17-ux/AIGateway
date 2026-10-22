@@ -7,9 +7,9 @@
 
 import { execSync } from 'child_process';
 
-const CONSOLE_URL = process.env.CONSOLE_URL || 'http://localhost:3000';
-const GATEWAY_URL = process.env.GATEWAY_URL || 'http://localhost:8080';
-const INGEST_URL = process.env.INGEST_URL || 'http://localhost:8082';
+const CONSOLE_URL = process.env.CONSOLE_URL || 'http://127.0.0.1:3000';
+const GATEWAY_URL = process.env.GATEWAY_URL || 'http://127.0.0.1:8080';
+const INGEST_URL = process.env.INGEST_URL || 'http://127.0.0.1:8082';
 
 async function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));

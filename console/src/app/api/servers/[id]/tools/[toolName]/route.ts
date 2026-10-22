@@ -56,7 +56,18 @@ export async function PUT(
       [projectId]
     );
 
-    return NextResponse.json({ policy: updRes.rows[0] });
+    const policy = updRes.rows[0];
+
+    const { logAudit } = await import('@/lib/audit');
+    await logAudit({
+      orgId: session.orgId,
+      actor: session.email,
+      action: 'tool_policy.update',
+      target: `tool:${decodedToolName} on server:${params.id}`,
+      diff: { enabled: policy.enabled, rename: policy.rename },
+    });
+
+    return NextResponse.json({ policy });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

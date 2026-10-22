@@ -39,6 +39,18 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     const body = await req.json();
     const { name, namespace_prefix, url, enabled, timeouts, auth_type } = body;
 
+    if (url) {
+      const { validateSSRF, SSRFError } = await import('@/lib/ssrf');
+      try {
+        await validateSSRF(url.trim());
+      } catch (ssrfErr: any) {
+        if (ssrfErr instanceof SSRFError) {
+          return NextResponse.json({ error: `SSRF Policy Violation: ${ssrfErr.message}` }, { status: 400 });
+        }
+        return NextResponse.json({ error: `URL Validation Error: ${ssrfErr.message}` }, { status: 400 });
+      }
+    }
+
     await initDatabase();
 
     const updRes = await pool.query(`
@@ -69,13 +81,23 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       return NextResponse.json({ error: 'MCP Server not found' }, { status: 404 });
     }
 
-    const projectId = updRes.rows[0].project_id;
+    const updatedServer = updRes.rows[0];
+    const projectId = updatedServer.project_id;
     await pool.query(
       'UPDATE projects SET config_version = (SELECT COALESCE(MAX(config_version), 0) + 1 FROM projects), updated_at = NOW() WHERE id = $1',
       [projectId]
     );
 
-    return NextResponse.json({ server: updRes.rows[0] });
+    const { logAudit } = await import('@/lib/audit');
+    await logAudit({
+      orgId: session.orgId,
+      actor: session.email,
+      action: 'server.update',
+      target: `server:${updatedServer.name} (${updatedServer.id})`,
+      diff: { name, namespace_prefix, url, enabled, timeouts, auth_type },
+    });
+
+    return NextResponse.json({ server: updatedServer });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
@@ -91,7 +113,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     await initDatabase();
 
     const findRes = await pool.query(`
-      SELECT s.id, s.project_id
+      SELECT s.id, s.name, s.project_id
       FROM mcp_servers s
       JOIN projects p ON p.id = s.project_id
       WHERE s.id = $1 AND p.org_id = $2
@@ -101,13 +123,22 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
       return NextResponse.json({ error: 'MCP Server not found' }, { status: 404 });
     }
 
-    const projectId = findRes.rows[0].project_id;
+    const serverToDelete = findRes.rows[0];
+    const projectId = serverToDelete.project_id;
     await pool.query('DELETE FROM mcp_servers WHERE id = $1', [params.id]);
 
     await pool.query(
       'UPDATE projects SET config_version = (SELECT COALESCE(MAX(config_version), 0) + 1 FROM projects), updated_at = NOW() WHERE id = $1',
       [projectId]
     );
+
+    const { logAudit } = await import('@/lib/audit');
+    await logAudit({
+      orgId: session.orgId,
+      actor: session.email,
+      action: 'server.delete',
+      target: `server:${serverToDelete.name} (${serverToDelete.id})`,
+    });
 
     return NextResponse.json({ success: true, deleted_id: params.id });
   } catch (err: any) {

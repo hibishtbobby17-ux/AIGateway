@@ -27,6 +27,19 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const server = serverRes.rows[0];
     let targetUrl = server.url;
 
+    // SSRF Check
+    const { validateSSRF, SSRFError } = await import('@/lib/ssrf');
+    try {
+      await validateSSRF(targetUrl);
+    } catch (ssrfErr: any) {
+      return NextResponse.json({
+        success: false,
+        status: 'unhealthy',
+        error: `SSRF Policy Violation: ${ssrfErr.message}`,
+        checked_url: targetUrl,
+      }, { status: 400 });
+    }
+
     // In Docker, if the URL references localhost or 127.0.0.1 and target is internal console, replace with 127.0.0.1
     if (targetUrl.includes('localhost:3000')) {
       targetUrl = targetUrl.replace('localhost:3000', '127.0.0.1:3000');

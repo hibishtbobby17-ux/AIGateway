@@ -63,8 +63,19 @@ export async function POST(req: NextRequest) {
       RETURNING id, name, status, version, created_at
     `, [name.trim(), secretHash]);
 
+    const createdGw = insRes.rows[0];
+
+    const { logAudit } = await import('@/lib/audit');
+    await logAudit({
+      orgId: session.orgId,
+      actor: session.email,
+      action: 'gateway.create',
+      target: `gateway:${createdGw.name} (${createdGw.id})`,
+      diff: { name: createdGw.name, version: createdGw.version },
+    });
+
     return NextResponse.json({
-      gateway: insRes.rows[0],
+      gateway: createdGw,
       secret: rawSecret, // Return plaintext secret ONCE to operator
     }, { status: 201 });
   } catch (err: any) {

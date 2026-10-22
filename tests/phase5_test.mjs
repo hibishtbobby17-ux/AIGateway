@@ -12,7 +12,7 @@ async function runPhase5Verification() {
 
   // Step 1: Authenticate to Console as Admin
   console.log('Step 1: Authenticating to Console...');
-  const loginRes = await fetch('http://localhost:3000/api/auth/login', {
+  const loginRes = await fetch('http://127.0.0.1:3000/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: 'admin@aigateway.local', password: 'Admin123!@#' })
@@ -24,7 +24,7 @@ async function runPhase5Verification() {
 
   // Step 2: Validate Mock IdP OIDC Discovery & JWKS
   console.log('Step 2: Testing Mock IdP OIDC Discovery and JWKS...');
-  const oidcRes = await fetch('http://localhost:3000/api/mock/idp/.well-known/openid-configuration');
+  const oidcRes = await fetch('http://127.0.0.1:3000/api/mock/idp/.well-known/openid-configuration');
   if (!oidcRes.ok) throw new Error(`OIDC discovery failed: ${oidcRes.status}`);
   const oidc = await oidcRes.json();
   console.log(`✓ OIDC Issuer: ${oidc.issuer}`);
@@ -32,7 +32,7 @@ async function runPhase5Verification() {
   console.log(`✓ Authorization Endpoint: ${oidc.authorization_endpoint}`);
   console.log(`✓ JWKS URI: ${oidc.jwks_uri}`);
 
-  const jwksRes = await fetch('http://localhost:3000/api/mock/idp/.well-known/jwks.json');
+  const jwksRes = await fetch('http://127.0.0.1:3000/api/mock/idp/.well-known/jwks.json');
   if (!jwksRes.ok) throw new Error(`JWKS fetch failed: ${jwksRes.status}`);
   const jwks = await jwksRes.json();
   if (!jwks.keys || jwks.keys.length === 0 || jwks.keys[0].kty !== 'RSA') {
@@ -46,7 +46,7 @@ async function runPhase5Verification() {
   console.log('--- Part 1: Outbound OAuth Client Credentials Grant ---');
   const ccProjectSlug = `oauth-cc-${Date.now()}`;
   console.log(`Creating project with slug: ${ccProjectSlug}...`);
-  const ccProjRes = await fetch('http://localhost:3000/api/projects', {
+  const ccProjRes = await fetch('http://127.0.0.1:3000/api/projects', {
     method: 'POST',
     headers: authHeaders,
     body: JSON.stringify({
@@ -58,7 +58,7 @@ async function runPhase5Verification() {
   const ccProject = (await ccProjRes.json()).project;
 
   console.log('Registering downstream secure server (requiring OAuth Bearer)...');
-  const srvCcRes = await fetch(`http://localhost:3000/api/projects/${ccProject.id}/servers`, {
+  const srvCcRes = await fetch(`http://127.0.0.1:3000/api/projects/${ccProject.id}/servers`, {
     method: 'POST',
     headers: authHeaders,
     body: JSON.stringify({
@@ -73,7 +73,7 @@ async function runPhase5Verification() {
   const srvCc = (await srvCcRes.json()).server;
 
   console.log('Configuring OAuth Client Credentials on server...');
-  const ccConfigRes = await fetch(`http://localhost:3000/api/servers/${srvCc.id}/oauth/config`, {
+  const ccConfigRes = await fetch(`http://127.0.0.1:3000/api/servers/${srvCc.id}/oauth/config`, {
     method: 'POST',
     headers: authHeaders,
     body: JSON.stringify({
@@ -93,7 +93,7 @@ async function runPhase5Verification() {
   await sleep(1500);
 
   console.log('MCP Client calling tools/list on Gateway /p/' + ccProjectSlug + '/mcp...');
-  const ccListRes = await fetch(`http://localhost:8080/p/${ccProjectSlug}/mcp`, {
+  const ccListRes = await fetch(`http://127.0.0.1:8080/p/${ccProjectSlug}/mcp`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} })
@@ -107,7 +107,7 @@ async function runPhase5Verification() {
   }
 
   console.log('Calling secure tool ledger__secure_echo with message...');
-  const ccCallRes = await fetch(`http://localhost:8080/p/${ccProjectSlug}/mcp`, {
+  const ccCallRes = await fetch(`http://127.0.0.1:8080/p/${ccProjectSlug}/mcp`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -135,7 +135,7 @@ async function runPhase5Verification() {
   console.log('--- Part 2: Outbound OAuth Authorization Code + PKCE Grant ---');
   const pkceProjectSlug = `oauth-pkce-${Date.now()}`;
   console.log(`Creating project with slug: ${pkceProjectSlug}...`);
-  const pkceProjRes = await fetch('http://localhost:3000/api/projects', {
+  const pkceProjRes = await fetch('http://127.0.0.1:3000/api/projects', {
     method: 'POST',
     headers: authHeaders,
     body: JSON.stringify({
@@ -147,7 +147,7 @@ async function runPhase5Verification() {
   const pkceProject = (await pkceProjRes.json()).project;
 
   console.log('Registering downstream vault server...');
-  const srvPkceRes = await fetch(`http://localhost:3000/api/projects/${pkceProject.id}/servers`, {
+  const srvPkceRes = await fetch(`http://127.0.0.1:3000/api/projects/${pkceProject.id}/servers`, {
     method: 'POST',
     headers: authHeaders,
     body: JSON.stringify({
@@ -162,7 +162,7 @@ async function runPhase5Verification() {
   const srvPkce = (await srvPkceRes.json()).server;
 
   console.log('Configuring OAuth Auth-Code on server...');
-  const pkceConfigRes = await fetch(`http://localhost:3000/api/servers/${srvPkce.id}/oauth/config`, {
+  const pkceConfigRes = await fetch(`http://127.0.0.1:3000/api/servers/${srvPkce.id}/oauth/config`, {
     method: 'POST',
     headers: authHeaders,
     body: JSON.stringify({
@@ -178,7 +178,7 @@ async function runPhase5Verification() {
   if (!pkceConfigRes.ok) throw new Error('Failed to configure PKCE OAuth');
 
   console.log('Initiating Auth-Code + PKCE flow in Console...');
-  const authorizeRes = await fetch(`http://localhost:3000/api/servers/${srvPkce.id}/oauth/authorize`, {
+  const authorizeRes = await fetch(`http://127.0.0.1:3000/api/servers/${srvPkce.id}/oauth/authorize`, {
     method: 'POST',
     headers: authHeaders
   });
@@ -204,7 +204,7 @@ async function runPhase5Verification() {
   console.log('✓ Token exchange completed, access and refresh tokens vaulted in Control Plane.');
 
   // Verify server oauth status in Console
-  const statusRes = await fetch(`http://localhost:3000/api/servers/${srvPkce.id}/oauth/config`, {
+  const statusRes = await fetch(`http://127.0.0.1:3000/api/servers/${srvPkce.id}/oauth/config`, {
     headers: authHeaders
   });
   const statusData = await statusRes.json();
@@ -217,7 +217,7 @@ async function runPhase5Verification() {
   await sleep(1500);
 
   console.log('Calling vault__get_confidential_report on Gateway (Gateway fetches short-lived token from Console)...');
-  const pkceCallRes = await fetch(`http://localhost:8080/p/${pkceProjectSlug}/mcp`, {
+  const pkceCallRes = await fetch(`http://127.0.0.1:8080/p/${pkceProjectSlug}/mcp`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -245,7 +245,7 @@ async function runPhase5Verification() {
   console.log('--- Part 3: Token Revocation & reauth_required Detection ---');
   console.log('Simulating token revocation at external IdP...');
   // Force refresh token delivery when refresh token is invalid
-  const forceRes = await fetch(`http://localhost:3000/api/gateway/v1/tokens/${srvPkce.id}?force=true`, {
+  const forceRes = await fetch(`http://127.0.0.1:3000/api/gateway/v1/tokens/${srvPkce.id}?force=true`, {
     method: 'POST',
     headers: {
       'Authorization': 'Bearer ' + token // console admin or gateway token
@@ -256,7 +256,7 @@ async function runPhase5Verification() {
   // We simulate revocation by explicitly calling IdP revoke or setting status
   console.log('Revoking refresh tokens at IdP and verifying reauth_required status...');
   // Call revoke on all mock refresh tokens
-  await fetch('http://localhost:3000/api/mock/idp/revoke', {
+  await fetch('http://127.0.0.1:3000/api/mock/idp/revoke', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ refresh_token: 'all' })
@@ -265,7 +265,7 @@ async function runPhase5Verification() {
   // Trigger forced token request from Gateway to Console
   console.log('Gateway requests forced token refresh from Console...');
   // Authenticate as gateway
-  const gwAuthRes = await fetch('http://localhost:3000/api/gateway/v1/auth', {
+  const gwAuthRes = await fetch('http://127.0.0.1:3000/api/gateway/v1/auth', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ gateway_id: 'gateway-default-01', secret: 'dev-gateway-secret' })
@@ -274,14 +274,14 @@ async function runPhase5Verification() {
   const gwToken = gwAuthData.token;
 
   // Revoke the specific refresh token in DB or via token endpoint
-  const testReauthRes = await fetch(`http://localhost:3000/api/gateway/v1/tokens/${srvPkce.id}?force=true`, {
+  const testReauthRes = await fetch(`http://127.0.0.1:3000/api/gateway/v1/tokens/${srvPkce.id}?force=true`, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${gwToken}` }
   });
   console.log(`✓ Token endpoint response on refresh: HTTP ${testReauthRes.status}`);
 
   // Query server status via Console
-  const checkStatusRes = await fetch(`http://localhost:3000/api/servers/${srvPkce.id}/oauth/config`, {
+  const checkStatusRes = await fetch(`http://127.0.0.1:3000/api/servers/${srvPkce.id}/oauth/config`, {
     headers: authHeaders
   });
   const checkStatusData = await checkStatusRes.json();
@@ -294,7 +294,7 @@ async function runPhase5Verification() {
   console.log('--- Part 4: Inbound OAuth Bearer Token Validation (Client -> Gateway) ---');
   const inboundSlug = `inbound-oauth-${Date.now()}`;
   console.log(`Creating project with inbound OAuth enforcement: ${inboundSlug}...`);
-  const inboundProjRes = await fetch('http://localhost:3000/api/projects', {
+  const inboundProjRes = await fetch('http://127.0.0.1:3000/api/projects', {
     method: 'POST',
     headers: authHeaders,
     body: JSON.stringify({
@@ -316,7 +316,7 @@ async function runPhase5Verification() {
   console.log('Waiting for Gateway config sync...');
   await sleep(1500);
 
-  const inboundEndpoint = `http://localhost:8080/p/${inboundSlug}/mcp`;
+  const inboundEndpoint = `http://127.0.0.1:8080/p/${inboundSlug}/mcp`;
 
   // 1. Unauthenticated Request (Missing Token) -> Expect 401
   console.log('Test 4A: Sending unauthenticated request (no Authorization header)...');
@@ -351,7 +351,7 @@ async function runPhase5Verification() {
 
   // 3. Valid Bearer Token signed by Mock IdP -> Expect 200
   console.log('Test 4C: Acquiring valid signed Bearer token from Mock IdP...');
-  const idpTokenRes = await fetch('http://localhost:3000/api/mock/idp/token', {
+  const idpTokenRes = await fetch('http://127.0.0.1:3000/api/mock/idp/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -381,7 +381,7 @@ async function runPhase5Verification() {
 
   // 4. Test RFC 9207 Protected Resource Metadata
   console.log('Test 4D: Testing OAuth Protected Resource Discovery Metadata...');
-  const metaRes = await fetch(`http://localhost:8080/p/${inboundSlug}/.well-known/oauth-protected-resource`);
+  const metaRes = await fetch(`http://127.0.0.1:8080/p/${inboundSlug}/.well-known/oauth-protected-resource`);
   if (!metaRes.ok) throw new Error(`Protected resource metadata failed: HTTP ${metaRes.status}`);
   const metaData = await metaRes.json();
   console.log(`✓ Protected Resource Metadata:`, JSON.stringify(metaData));

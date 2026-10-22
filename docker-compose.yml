@@ -61,6 +61,7 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin123!@#}
       NODE_ENV: production
       HOSTNAME: "0.0.0.0"
+      ALLOW_LOCAL_EGRESS: "true"
     depends_on:
       postgres:
         condition: service_healthy
