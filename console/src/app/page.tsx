@@ -106,6 +106,9 @@ export default function ConsoleDashboard() {
   const [inspectionLoading, setInspectionLoading] = useState<boolean>(false);
   const [inspectionTab, setInspectionTab] = useState<'endpoints' | 'downstreams' | 'policies' | 'tls'>('endpoints');
   const [inspectSearchQuery, setInspectSearchQuery] = useState<string>('');
+  const [inspectSelectedProjectId, setInspectSelectedProjectId] = useState<string>('');
+  const [inspectViewMode, setInspectViewMode] = useState<'cards' | 'table'>('table');
+  const [inspectProtocolFilter, setInspectProtocolFilter] = useState<'all' | 'https' | 'http'>('all');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   // Logs & Telemetry State
@@ -248,6 +251,8 @@ export default function ConsoleDashboard() {
     setInspectionLoading(true);
     setInspectionTab('endpoints');
     setInspectSearchQuery('');
+    setInspectSelectedProjectId('');
+    setInspectProtocolFilter('all');
     try {
       const res = await fetch(`/api/gateways/${gatewayId}`);
       if (res.ok) {
@@ -1214,17 +1219,34 @@ export default function ConsoleDashboard() {
 
                       {gw.bound_projects && gw.bound_projects.length > 0 ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          {gw.bound_projects.map((bp: any) => (
+                          {gw.bound_projects.slice(0, 3).map((bp: any) => (
                             <div key={bp.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.8rem', background: 'rgba(255, 255, 255, 0.03)', padding: '6px 8px', borderRadius: '4px' }}>
-                              <div>
-                                <div style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '0.82rem' }}>{bp.name}</div>
+                              <div style={{ overflow: 'hidden' }}>
+                                <div style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '0.82rem', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{bp.name}</div>
                                 <code style={{ fontSize: '0.72rem', color: 'var(--accent-cyan)' }}>{bp.endpoint_url || `/p/${bp.slug}/mcp`}</code>
                               </div>
-                              <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', background: 'rgba(255, 255, 255, 0.05)', padding: '2px 6px', borderRadius: '4px' }}>
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', background: 'rgba(255, 255, 255, 0.05)', padding: '2px 6px', borderRadius: '4px', whiteSpace: 'nowrap', marginLeft: '6px' }}>
                                 {bp.server_count || 0} upstreams
                               </span>
                             </div>
                           ))}
+                          {gw.bound_projects.length > 3 && (
+                            <button
+                              onClick={() => handleInspectGateway(gw.id)}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'var(--accent-cyan)',
+                                fontSize: '0.74rem',
+                                cursor: 'pointer',
+                                textAlign: 'left',
+                                padding: '4px 2px',
+                                textDecoration: 'underline'
+                              }}
+                            >
+                              + {gw.bound_projects.length - 3} more mapped projects (click to inspect all ➔)
+                            </button>
+                          )}
                         </div>
                       ) : (
                         <div style={{ fontSize: '0.78rem', color: 'var(--text-dim)', fontStyle: 'italic' }}>
@@ -2274,498 +2296,793 @@ export default function ConsoleDashboard() {
                 <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-dim)' }}>
                   Failed to load inspection details.
                 </div>
-              ) : (
-                <>
-                  {/* TAB 1: SERVED ENDPOINTS */}
-                  {inspectionTab === 'endpoints' && (
-                    <div>
-                      {/* Architecture Routing Path */}
-                      <div style={{
-                        background: 'rgba(0, 0, 0, 0.35)',
-                        border: '1px solid var(--border-subtle)',
-                        borderRadius: '10px',
-                        padding: '16px 20px',
-                        marginBottom: '20px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: '12px',
-                        flexWrap: 'wrap'
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem' }}>
-                          <span className="badge badge-cyan">Client Application</span>
-                          <span style={{ color: 'var(--accent-cyan)' }}>➔</span>
-                          <span className="badge badge-indigo">AI Gateway Data Plane ({inspectingGatewayData.gateway.protocol?.toUpperCase()})</span>
-                          <span style={{ color: 'var(--accent-cyan)' }}>➔</span>
-                          <span className="badge badge-emerald">Policy &amp; Guardrails Engine</span>
-                          <span style={{ color: 'var(--accent-cyan)' }}>➔</span>
-                          <span className="badge badge-rose">Upstream MCP Servers</span>
-                        </div>
-                        <div style={{ fontSize: '0.78rem', color: 'var(--text-dim)' }}>
-                          Base Host: <code style={{ color: 'var(--accent-cyan)' }}>{inspectingGatewayData.gateway.base_url}</code>
+              ) : (() => {
+                const allEndpoints = inspectingGatewayData.endpoints || [];
+                const totalProjectsCount = allEndpoints.length;
+                const totalDownstreamServersCount = allEndpoints.reduce((sum: number, ep: any) => sum + (ep.downstream_servers?.length || 0), 0);
+                const totalToolPoliciesCount = allEndpoints.reduce((sum: number, ep: any) =>
+                  sum + (ep.downstream_servers || []).reduce((sSum: number, s: any) => sSum + (s.tool_policies?.length || 0), 0), 0);
+                const totalHttpsServersCount = allEndpoints.reduce((sum: number, ep: any) =>
+                  sum + (ep.downstream_servers || []).filter((s: any) => s.protocol === 'https').length, 0);
+
+                const filteredEndpoints = allEndpoints.filter((ep: any) => {
+                  if (inspectSelectedProjectId && ep.project_id !== inspectSelectedProjectId) {
+                    return false;
+                  }
+                  if (inspectProtocolFilter === 'https') {
+                    const hasHttps = ep.downstream_servers?.some((s: any) => s.protocol === 'https');
+                    if (!hasHttps) return false;
+                  }
+                  if (inspectProtocolFilter === 'http') {
+                    const hasHttp = ep.downstream_servers?.some((s: any) => s.protocol === 'http');
+                    if (!hasHttp) return false;
+                  }
+                  if (inspectSearchQuery.trim()) {
+                    const q = inspectSearchQuery.toLowerCase();
+                    const matchName = ep.project_name.toLowerCase().includes(q);
+                    const matchSlug = ep.slug.toLowerCase().includes(q);
+                    const matchUrl = ep.endpoint_url.toLowerCase().includes(q);
+                    const matchServer = ep.downstream_servers?.some((s: any) =>
+                      s.name.toLowerCase().includes(q) || s.url.toLowerCase().includes(q) || s.namespace_prefix.toLowerCase().includes(q)
+                    );
+                    const matchTool = ep.downstream_servers?.some((s: any) =>
+                      s.tool_policies?.some((tp: any) => tp.tool_name.toLowerCase().includes(q) || (tp.rename && tp.rename.toLowerCase().includes(q)))
+                    );
+                    return matchName || matchSlug || matchUrl || matchServer || matchTool;
+                  }
+                  return true;
+                });
+
+                return (
+                  <div>
+                    {/* Multi-Project Summary Stats Bar */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '18px' }}>
+                      <div className="glass-panel" style={{ padding: '12px 16px', background: 'rgba(255, 255, 255, 0.02)' }}>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          Mapped Projects
+                        </span>
+                        <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#f8fafc', marginTop: '2px' }}>
+                          {totalProjectsCount}
                         </div>
                       </div>
 
-                      {/* Endpoints Table / Cards */}
-                      {inspectingGatewayData.endpoints && inspectingGatewayData.endpoints.length > 0 ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                          {inspectingGatewayData.endpoints
-                            .filter((ep: any) =>
-                              !inspectSearchQuery ||
-                              ep.project_name.toLowerCase().includes(inspectSearchQuery.toLowerCase()) ||
-                              ep.slug.toLowerCase().includes(inspectSearchQuery.toLowerCase()) ||
-                              ep.endpoint_url.toLowerCase().includes(inspectSearchQuery.toLowerCase())
-                            )
-                            .map((ep: any) => (
-                              <div
-                                key={ep.project_id}
-                                className="glass-panel"
-                                style={{
-                                  padding: '18px 22px',
-                                  background: 'rgba(255, 255, 255, 0.02)',
-                                  border: '1px solid var(--border-subtle)',
-                                  borderRadius: '10px'
-                                }}
-                              >
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                    <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: '#f8fafc' }}>
-                                      {ep.project_name}
-                                    </h4>
-                                    <span className="badge badge-cyan" style={{ fontSize: '0.7rem' }}>
-                                      /{ep.slug}
-                                    </span>
-                                    <span className={`badge ${ep.status === 'active' ? 'badge-emerald' : 'badge-rose'}`} style={{ fontSize: '0.68rem' }}>
-                                      {ep.status}
-                                    </span>
-                                  </div>
-
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.75rem' }}>
-                                    <span className="badge badge-indigo">
-                                      Auth: {ep.inbound_auth?.mode?.toUpperCase() || 'NONE'}
-                                    </span>
-                                    <span className="badge badge-emerald">
-                                      {ep.downstream_servers?.length || 0} Downstream MCPs
-                                    </span>
-                                  </div>
-                                </div>
-
-                                {/* Endpoint URL Bar */}
-                                <div style={{
-                                  background: 'rgba(0, 0, 0, 0.45)',
-                                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                                  padding: '10px 14px',
-                                  borderRadius: '8px',
-                                  marginBottom: '10px',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'space-between',
-                                  gap: '12px'
-                                }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
-                                    <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                                      MCP Protocol URL:
-                                    </span>
-                                    <code style={{ fontSize: '0.84rem', color: 'var(--accent-cyan)', wordBreak: 'break-all' }}>
-                                      {ep.endpoint_url}
-                                    </code>
-                                  </div>
-                                  <button
-                                    onClick={() => copyToClipboard(ep.endpoint_url, `ep-${ep.project_id}`)}
-                                    className="btn-secondary"
-                                    style={{ fontSize: '0.72rem', padding: '3px 8px', whiteSpace: 'nowrap' }}
-                                  >
-                                    {copiedKey === `ep-${ep.project_id}` ? '✓ Copied' : '📋 Copy URL'}
-                                  </button>
-                                </div>
-
-                                {/* OAuth Discovery Bar */}
-                                <div style={{
-                                  background: 'rgba(0, 0, 0, 0.25)',
-                                  border: '1px solid rgba(255, 255, 255, 0.05)',
-                                  padding: '8px 14px',
-                                  borderRadius: '6px',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'space-between',
-                                  gap: '12px',
-                                  fontSize: '0.76rem'
-                                }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
-                                    <span style={{ color: 'var(--text-dim)' }}>OAuth Discovery:</span>
-                                    <code style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                                      {ep.oauth_discovery_url}
-                                    </code>
-                                  </div>
-                                  <button
-                                    onClick={() => copyToClipboard(ep.oauth_discovery_url, `oa-${ep.project_id}`)}
-                                    className="btn-secondary"
-                                    style={{ fontSize: '0.68rem', padding: '2px 6px', whiteSpace: 'nowrap' }}
-                                  >
-                                    {copiedKey === `oa-${ep.project_id}` ? '✓ Copied' : '📋 Copy'}
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
+                      <div className="glass-panel" style={{ padding: '12px 16px', background: 'rgba(255, 255, 255, 0.02)' }}>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          Upstream MCP Servers
+                        </span>
+                        <div style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--accent-cyan)', marginTop: '2px' }}>
+                          {totalDownstreamServersCount}
                         </div>
-                      ) : (
-                        <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-dim)' }}>
-                          No endpoints bound to this gateway.
+                      </div>
+
+                      <div className="glass-panel" style={{ padding: '12px 16px', background: 'rgba(255, 255, 255, 0.02)' }}>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          Active Tool Policies
+                        </span>
+                        <div style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--accent-emerald)', marginTop: '2px' }}>
+                          {totalToolPoliciesCount}
+                        </div>
+                      </div>
+
+                      <div className="glass-panel" style={{ padding: '12px 16px', background: 'rgba(255, 255, 255, 0.02)' }}>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          Encrypted Upstreams (TLS)
+                        </span>
+                        <div style={{ fontSize: '1.4rem', fontWeight: 700, color: totalHttpsServersCount > 0 ? 'var(--accent-emerald)' : '#f59e0b', marginTop: '2px' }}>
+                          {totalHttpsServersCount} / {totalDownstreamServersCount}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Interactive Project Scope Selector (Horizontal Pills) */}
+                    <div style={{
+                      background: 'rgba(0, 0, 0, 0.35)',
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-subtle)',
+                      marginBottom: '16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      flexWrap: 'wrap'
+                    }}>
+                      <span style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', marginRight: '4px' }}>
+                        Project Scope:
+                      </span>
+
+                      <button
+                        onClick={() => setInspectSelectedProjectId('')}
+                        style={{
+                          padding: '4px 10px',
+                          borderRadius: '6px',
+                          fontSize: '0.76rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          border: inspectSelectedProjectId === '' ? '1px solid var(--accent-cyan)' : '1px solid rgba(255, 255, 255, 0.1)',
+                          background: inspectSelectedProjectId === '' ? 'rgba(6, 182, 212, 0.25)' : 'rgba(255, 255, 255, 0.03)',
+                          color: inspectSelectedProjectId === '' ? '#fff' : 'var(--text-muted)'
+                        }}
+                      >
+                        🌐 All Projects ({totalProjectsCount})
+                      </button>
+
+                      {allEndpoints.map((ep: any) => (
+                        <button
+                          key={ep.project_id}
+                          onClick={() => setInspectSelectedProjectId(ep.project_id)}
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            fontSize: '0.76rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            border: inspectSelectedProjectId === ep.project_id ? '1px solid var(--accent-indigo)' : '1px solid rgba(255, 255, 255, 0.08)',
+                            background: inspectSelectedProjectId === ep.project_id ? 'rgba(99, 102, 241, 0.3)' : 'rgba(255, 255, 255, 0.03)',
+                            color: inspectSelectedProjectId === ep.project_id ? '#fff' : 'var(--text-muted)'
+                          }}
+                        >
+                          <span>{ep.project_name}</span>
+                          <span style={{ fontSize: '0.68rem', color: 'var(--accent-cyan)', background: 'rgba(0, 0, 0, 0.4)', padding: '1px 5px', borderRadius: '4px' }}>
+                            {ep.downstream_servers?.length || 0}
+                          </span>
+                        </button>
+                      ))}
+
+                      {inspectSelectedProjectId && (
+                        <button
+                          onClick={() => setInspectSelectedProjectId('')}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#fda4af',
+                            fontSize: '0.74rem',
+                            cursor: 'pointer',
+                            marginLeft: 'auto'
+                          }}
+                        >
+                          ✕ Clear Project Filter
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Filter Bar & View Toggle */}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginBottom: '16px',
+                      flexWrap: 'wrap',
+                      gap: '10px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '0.74rem', color: 'var(--text-dim)' }}>Protocol Filter:</span>
+                        <button
+                          onClick={() => setInspectProtocolFilter('all')}
+                          style={{
+                            padding: '3px 8px',
+                            borderRadius: '4px',
+                            fontSize: '0.72rem',
+                            cursor: 'pointer',
+                            border: inspectProtocolFilter === 'all' ? '1px solid var(--accent-cyan)' : '1px solid rgba(255,255,255,0.08)',
+                            background: inspectProtocolFilter === 'all' ? 'rgba(6,182,212,0.2)' : 'transparent',
+                            color: inspectProtocolFilter === 'all' ? '#fff' : 'var(--text-muted)'
+                          }}
+                        >
+                          All Protocols
+                        </button>
+                        <button
+                          onClick={() => setInspectProtocolFilter('https')}
+                          style={{
+                            padding: '3px 8px',
+                            borderRadius: '4px',
+                            fontSize: '0.72rem',
+                            cursor: 'pointer',
+                            border: inspectProtocolFilter === 'https' ? '1px solid var(--accent-emerald)' : '1px solid rgba(255,255,255,0.08)',
+                            background: inspectProtocolFilter === 'https' ? 'rgba(16,185,129,0.2)' : 'transparent',
+                            color: inspectProtocolFilter === 'https' ? 'var(--accent-emerald)' : 'var(--text-muted)'
+                          }}
+                        >
+                          🔒 HTTPS Only
+                        </button>
+                        <button
+                          onClick={() => setInspectProtocolFilter('http')}
+                          style={{
+                            padding: '3px 8px',
+                            borderRadius: '4px',
+                            fontSize: '0.72rem',
+                            cursor: 'pointer',
+                            border: inspectProtocolFilter === 'http' ? '1px solid #f59e0b' : '1px solid rgba(255,255,255,0.08)',
+                            background: inspectProtocolFilter === 'http' ? 'rgba(245,158,11,0.2)' : 'transparent',
+                            color: inspectProtocolFilter === 'http' ? '#f59e0b' : 'var(--text-muted)'
+                          }}
+                        >
+                          🌐 HTTP Only
+                        </button>
+                      </div>
+
+                      {inspectionTab === 'endpoints' && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontSize: '0.74rem', color: 'var(--text-dim)' }}>View Mode:</span>
+                          <button
+                            onClick={() => setInspectViewMode('table')}
+                            style={{
+                              padding: '3px 8px',
+                              borderRadius: '4px',
+                              fontSize: '0.72rem',
+                              cursor: 'pointer',
+                              border: inspectViewMode === 'table' ? '1px solid var(--accent-indigo)' : '1px solid rgba(255,255,255,0.08)',
+                              background: inspectViewMode === 'table' ? 'rgba(99,102,241,0.2)' : 'transparent',
+                              color: inspectViewMode === 'table' ? '#fff' : 'var(--text-muted)'
+                            }}
+                          >
+                            📋 Compact Table
+                          </button>
+                          <button
+                            onClick={() => setInspectViewMode('cards')}
+                            style={{
+                              padding: '3px 8px',
+                              borderRadius: '4px',
+                              fontSize: '0.72rem',
+                              cursor: 'pointer',
+                              border: inspectViewMode === 'cards' ? '1px solid var(--accent-indigo)' : '1px solid rgba(255,255,255,0.08)',
+                              background: inspectViewMode === 'cards' ? 'rgba(99,102,241,0.2)' : 'transparent',
+                              color: inspectViewMode === 'cards' ? '#fff' : 'var(--text-muted)'
+                            }}
+                          >
+                            🗂️ Cards Flow
+                          </button>
                         </div>
                       )}
                     </div>
-                  )}
 
-                  {/* TAB 2: DOWNSTREAM MCP CONNECTIONS */}
-                  {inspectionTab === 'downstreams' && (
-                    <div>
-                      {inspectingGatewayData.endpoints && inspectingGatewayData.endpoints.length > 0 ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                          {inspectingGatewayData.endpoints.map((ep: any) => (
-                            <div key={ep.project_id} style={{ background: 'rgba(0, 0, 0, 0.2)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-subtle)' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                                <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600, color: 'var(--accent-cyan)' }}>
-                                  Project: {ep.project_name} ({ep.downstream_servers?.length || 0} Upstream Servers)
-                                </h4>
-                                <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
-                                  Prefix Namespace Isolations Enforced
-                                </span>
-                              </div>
-
-                              {ep.downstream_servers && ep.downstream_servers.length > 0 ? (
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '12px' }}>
-                                  {ep.downstream_servers
-                                    .filter((s: any) =>
-                                      !inspectSearchQuery ||
-                                      s.name.toLowerCase().includes(inspectSearchQuery.toLowerCase()) ||
-                                      s.url.toLowerCase().includes(inspectSearchQuery.toLowerCase()) ||
-                                      s.namespace_prefix.toLowerCase().includes(inspectSearchQuery.toLowerCase())
-                                    )
-                                    .map((s: any) => (
-                                      <div
-                                        key={s.id}
-                                        style={{
-                                          background: 'rgba(255, 255, 255, 0.03)',
-                                          border: '1px solid rgba(255, 255, 255, 0.07)',
-                                          borderRadius: '8px',
-                                          padding: '14px'
-                                        }}
-                                      >
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                                          <div style={{ fontWeight: 600, fontSize: '0.88rem', color: '#fff' }}>
-                                            {s.name}
-                                          </div>
-                                          <span className={`badge ${s.protocol === 'https' ? 'badge-emerald' : 'badge-cyan'}`} style={{ fontSize: '0.68rem' }}>
-                                            {s.protocol === 'https' ? '🔒 HTTPS' : '🌐 HTTP'}
-                                          </span>
-                                        </div>
-
-                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginBottom: '8px' }}>
-                                          Prefix: <code style={{ color: 'var(--accent-indigo)' }}>{s.namespace_prefix || 'none'}</code> • Transport: <strong style={{ color: '#fff' }}>{s.transport}</strong>
-                                        </div>
-
-                                        <div style={{
-                                          background: 'rgba(0, 0, 0, 0.4)',
-                                          padding: '6px 8px',
-                                          borderRadius: '4px',
-                                          fontSize: '0.72rem',
-                                          color: 'var(--text-muted)',
-                                          wordBreak: 'break-all',
-                                          marginBottom: '10px'
-                                        }}>
-                                          {s.url}
-                                        </div>
-
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-dim)' }}>
-                                          <span>Timeouts: {s.timeouts?.dial_ms || 5000}ms / {s.timeouts?.call_ms || 15000}ms</span>
-                                          <span>Auth: {s.auth_type?.toUpperCase() || 'NONE'}</span>
-                                        </div>
-
-                                        <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.05)', display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem' }}>
-                                          <span style={{ color: 'var(--text-dim)' }}>Tool Policies:</span>
-                                          <span style={{ color: 'var(--accent-emerald)', fontWeight: 600 }}>
-                                            {s.tool_policies?.length || 0} Managed Rules
-                                          </span>
-                                        </div>
-                                      </div>
-                                    ))}
-                                </div>
-                              ) : (
-                                <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', fontStyle: 'italic' }}>
-                                  No upstream MCP servers attached to this project.
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-dim)' }}>
-                          No upstream connections found.
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* TAB 3: ENFORCED POLICIES & RULES */}
-                  {inspectionTab === 'policies' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                      {inspectingGatewayData.endpoints?.map((ep: any) => (
-                        <div key={ep.project_id} style={{ background: 'rgba(0, 0, 0, 0.25)', border: '1px solid var(--border-subtle)', borderRadius: '10px', padding: '18px' }}>
-                          <h4 style={{ margin: '0 0 14px 0', fontSize: '1rem', fontWeight: 600, color: '#f8fafc' }}>
-                            Policy Stack for {ep.project_name}
-                          </h4>
-
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px', marginBottom: '16px' }}>
-                            {/* Inbound Auth Policy Card */}
-                            <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '12px 14px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
-                              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                                INBOUND AUTHENTICATION
-                              </div>
-                              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--accent-cyan)', marginBottom: '4px' }}>
-                                Mode: {ep.inbound_auth?.mode?.toUpperCase() || 'NONE'}
-                              </div>
-                              {ep.inbound_auth?.issuer && (
-                                <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', wordBreak: 'break-all' }}>
-                                  Issuer: {ep.inbound_auth.issuer}
-                                </div>
-                              )}
-                              <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', marginTop: '4px' }}>
-                                Required Scopes: {ep.inbound_auth?.required_scopes?.join(', ') || 'mcp:tools, mcp:read'}
-                              </div>
-                            </div>
-
-                            {/* Traffic Guardrails Card */}
-                            <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '12px 14px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
-                              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                                TRAFFIC &amp; RATE GUARDRAILS
-                              </div>
-                              <div style={{ fontSize: '0.82rem', color: 'var(--text-main)', marginBottom: '4px' }}>
-                                Rate Limit: <strong style={{ color: '#fff' }}>{ep.rate_limits?.requests_per_minute || 600} req/min</strong>
-                              </div>
-                              <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
-                                Burst Capacity: {ep.rate_limits?.burst || 50} tokens
-                              </div>
-                              <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginTop: '2px' }}>
-                                Circuit Breaker: Trip on {ep.circuit_breaker?.max_failures || 5} consecutive errors ({ep.circuit_breaker?.recovery_seconds || 30}s recovery)
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Tool Policies Table */}
-                          <div style={{ marginTop: '10px' }}>
-                            <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>
-                              UPSTREAM TOOL POLICIES &amp; TRANSFORMS
-                            </div>
-
-                            {ep.downstream_servers?.some((s: any) => s.tool_policies?.length > 0) ? (
+                    {/* TAB 1: SERVED ENDPOINTS */}
+                    {inspectionTab === 'endpoints' && (
+                      <div>
+                        {filteredEndpoints.length > 0 ? (
+                          inspectViewMode === 'table' ? (
+                            /* HIGH DENSITY TABLE VIEW FOR MULTI-PROJECTS */
+                            <div style={{ background: 'rgba(0, 0, 0, 0.35)', border: '1px solid var(--border-subtle)', borderRadius: '10px', overflow: 'hidden' }}>
                               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
                                 <thead>
-                                  <tr style={{ background: 'rgba(0, 0, 0, 0.4)', textAlign: 'left', borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
-                                    <th style={{ padding: '8px 10px' }}>Server Prefix</th>
-                                    <th style={{ padding: '8px 10px' }}>Tool Name</th>
-                                    <th style={{ padding: '8px 10px' }}>Policy Status</th>
-                                    <th style={{ padding: '8px 10px' }}>Gateway Alias / Rename</th>
+                                  <tr style={{ background: 'rgba(0, 0, 0, 0.5)', textAlign: 'left', borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                                    <th style={{ padding: '10px 14px' }}>Project Name &amp; Slug</th>
+                                    <th style={{ padding: '10px 14px' }}>Inbound Endpoint URL</th>
+                                    <th style={{ padding: '10px 14px' }}>Inbound Auth</th>
+                                    <th style={{ padding: '10px 14px' }}>Upstream Servers</th>
+                                    <th style={{ padding: '10px 14px' }}>Outbound Security</th>
+                                    <th style={{ padding: '10px 14px' }}>Rate Limit</th>
+                                    <th style={{ padding: '10px 14px', textAlign: 'right' }}>Action</th>
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {ep.downstream_servers.flatMap((s: any) =>
-                                    (s.tool_policies || []).map((tp: any, idx: number) => (
-                                      <tr key={`${s.id}-${idx}`} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
-                                        <td style={{ padding: '8px 10px', color: 'var(--accent-indigo)' }}>
-                                          <code>{s.namespace_prefix || 'root'}</code>
-                                        </td>
-                                        <td style={{ padding: '8px 10px', fontWeight: 600, color: '#f8fafc' }}>
-                                          {tp.tool_name}
-                                        </td>
-                                        <td style={{ padding: '8px 10px' }}>
-                                          <span className={`badge ${tp.enabled ? 'badge-emerald' : 'badge-rose'}`} style={{ fontSize: '0.68rem' }}>
-                                            {tp.enabled ? '✓ Allowed' : '✕ Blocked'}
-                                          </span>
-                                        </td>
-                                        <td style={{ padding: '8px 10px', color: tp.rename ? 'var(--accent-cyan)' : 'var(--text-dim)' }}>
-                                          {tp.rename ? <code>{tp.rename}</code> : 'Original Name'}
-                                        </td>
-                                      </tr>
-                                    ))
-                                  )}
+                                  {filteredEndpoints.map((ep: any) => (
+                                    <tr
+                                      key={ep.project_id}
+                                      style={{
+                                        borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                                        background: inspectSelectedProjectId === ep.project_id ? 'rgba(99, 102, 241, 0.1)' : 'transparent'
+                                      }}
+                                    >
+                                      <td style={{ padding: '10px 14px' }}>
+                                        <div style={{ fontWeight: 600, color: '#f8fafc' }}>{ep.project_name}</div>
+                                        <code style={{ fontSize: '0.72rem', color: 'var(--accent-cyan)' }}>/{ep.slug}</code>
+                                      </td>
+                                      <td style={{ padding: '10px 14px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                          <code style={{ fontSize: '0.74rem', color: 'var(--text-main)', maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {ep.endpoint_url}
+                                          </code>
+                                          <button
+                                            onClick={() => copyToClipboard(ep.endpoint_url, `ep-${ep.project_id}`)}
+                                            className="btn-secondary"
+                                            style={{ fontSize: '0.68rem', padding: '2px 6px' }}
+                                            title="Copy URL"
+                                          >
+                                            {copiedKey === `ep-${ep.project_id}` ? '✓' : '📋'}
+                                          </button>
+                                        </div>
+                                      </td>
+                                      <td style={{ padding: '10px 14px' }}>
+                                        <span className="badge badge-indigo" style={{ fontSize: '0.68rem' }}>
+                                          {ep.inbound_auth?.mode?.toUpperCase() || 'NONE'}
+                                        </span>
+                                      </td>
+                                      <td style={{ padding: '10px 14px' }}>
+                                        <span className="badge badge-emerald" style={{ fontSize: '0.68rem' }}>
+                                          {ep.downstream_servers?.length || 0} MCP Servers
+                                        </span>
+                                      </td>
+                                      <td style={{ padding: '10px 14px' }}>
+                                        {ep.downstream_servers?.some((s: any) => s.protocol === 'https') ? (
+                                          <span className="badge badge-emerald" style={{ fontSize: '0.68rem' }}>🔒 HTTPS</span>
+                                        ) : (
+                                          <span className="badge badge-amber" style={{ fontSize: '0.68rem' }}>🌐 HTTP</span>
+                                        )}
+                                      </td>
+                                      <td style={{ padding: '10px 14px', color: 'var(--text-dim)', fontSize: '0.74rem' }}>
+                                        {ep.rate_limits?.requests_per_minute || 600} req/m
+                                      </td>
+                                      <td style={{ padding: '10px 14px', textAlign: 'right' }}>
+                                        <button
+                                          onClick={() => {
+                                            setInspectSelectedProjectId(ep.project_id);
+                                            setInspectionTab('downstreams');
+                                          }}
+                                          className="btn-secondary"
+                                          style={{ fontSize: '0.72rem', padding: '3px 8px', color: 'var(--accent-cyan)' }}
+                                        >
+                                          Inspect Downstreams ➔
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
                                 </tbody>
                               </table>
-                            ) : (
-                              <div style={{ fontSize: '0.78rem', color: 'var(--text-dim)', fontStyle: 'italic', padding: '8px' }}>
-                                All upstream tools implicitly passed through with namespace prefixes.
+                            </div>
+                          ) : (
+                            /* DETAILED CARDS VIEW */
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                              {filteredEndpoints.map((ep: any) => (
+                                <div
+                                  key={ep.project_id}
+                                  className="glass-panel"
+                                  style={{
+                                    padding: '18px 22px',
+                                    background: 'rgba(255, 255, 255, 0.02)',
+                                    border: '1px solid var(--border-subtle)',
+                                    borderRadius: '10px'
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                      <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: '#f8fafc' }}>
+                                        {ep.project_name}
+                                      </h4>
+                                      <span className="badge badge-cyan" style={{ fontSize: '0.7rem' }}>
+                                        /{ep.slug}
+                                      </span>
+                                      <span className={`badge ${ep.status === 'active' ? 'badge-emerald' : 'badge-rose'}`} style={{ fontSize: '0.68rem' }}>
+                                        {ep.status}
+                                      </span>
+                                    </div>
+
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.75rem' }}>
+                                      <span className="badge badge-indigo">
+                                        Auth: {ep.inbound_auth?.mode?.toUpperCase() || 'NONE'}
+                                      </span>
+                                      <span className="badge badge-emerald">
+                                        {ep.downstream_servers?.length || 0} Downstream MCPs
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {/* Endpoint URL Bar */}
+                                  <div style={{
+                                    background: 'rgba(0, 0, 0, 0.45)',
+                                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                                    padding: '10px 14px',
+                                    borderRadius: '8px',
+                                    marginBottom: '10px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    gap: '12px'
+                                  }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+                                      <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                                        MCP Protocol URL:
+                                      </span>
+                                      <code style={{ fontSize: '0.84rem', color: 'var(--accent-cyan)', wordBreak: 'break-all' }}>
+                                        {ep.endpoint_url}
+                                      </code>
+                                    </div>
+                                    <button
+                                      onClick={() => copyToClipboard(ep.endpoint_url, `ep-${ep.project_id}`)}
+                                      className="btn-secondary"
+                                      style={{ fontSize: '0.72rem', padding: '3px 8px', whiteSpace: 'nowrap' }}
+                                    >
+                                      {copiedKey === `ep-${ep.project_id}` ? '✓ Copied' : '📋 Copy URL'}
+                                    </button>
+                                  </div>
+
+                                  {/* OAuth Discovery Bar */}
+                                  <div style={{
+                                    background: 'rgba(0, 0, 0, 0.25)',
+                                    border: '1px solid rgba(255, 255, 255, 0.05)',
+                                    padding: '8px 14px',
+                                    borderRadius: '6px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    gap: '12px',
+                                    fontSize: '0.76rem'
+                                  }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+                                      <span style={{ color: 'var(--text-dim)' }}>OAuth Discovery:</span>
+                                      <code style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                        {ep.oauth_discovery_url}
+                                      </code>
+                                    </div>
+                                    <button
+                                      onClick={() => copyToClipboard(ep.oauth_discovery_url, `oa-${ep.project_id}`)}
+                                      className="btn-secondary"
+                                      style={{ fontSize: '0.68rem', padding: '2px 6px', whiteSpace: 'nowrap' }}
+                                    >
+                                      {copiedKey === `oa-${ep.project_id}` ? '✓ Copied' : '📋 Copy'}
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )
+                        ) : (
+                          <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-dim)' }}>
+                            No endpoints match the selected project/protocol filters.
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* TAB 2: DOWNSTREAM MCP CONNECTIONS */}
+                    {inspectionTab === 'downstreams' && (
+                      <div>
+                        {filteredEndpoints.length > 0 ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                            {filteredEndpoints.map((ep: any) => (
+                              <div key={ep.project_id} style={{ background: 'rgba(0, 0, 0, 0.2)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-subtle)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                                  <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600, color: 'var(--accent-cyan)' }}>
+                                    Project: {ep.project_name} ({ep.downstream_servers?.length || 0} Upstream Servers)
+                                  </h4>
+                                  <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+                                    Prefix Namespace Isolations Enforced
+                                  </span>
+                                </div>
+
+                                {ep.downstream_servers && ep.downstream_servers.length > 0 ? (
+                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '12px' }}>
+                                    {ep.downstream_servers
+                                      .filter((s: any) =>
+                                        !inspectSearchQuery ||
+                                        s.name.toLowerCase().includes(inspectSearchQuery.toLowerCase()) ||
+                                        s.url.toLowerCase().includes(inspectSearchQuery.toLowerCase()) ||
+                                        s.namespace_prefix.toLowerCase().includes(inspectSearchQuery.toLowerCase())
+                                      )
+                                      .map((s: any) => (
+                                        <div
+                                          key={s.id}
+                                          style={{
+                                            background: 'rgba(255, 255, 255, 0.03)',
+                                            border: '1px solid rgba(255, 255, 255, 0.07)',
+                                            borderRadius: '8px',
+                                            padding: '14px'
+                                          }}
+                                        >
+                                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                            <div style={{ fontWeight: 600, fontSize: '0.88rem', color: '#fff' }}>
+                                              {s.name}
+                                            </div>
+                                            <span className={`badge ${s.protocol === 'https' ? 'badge-emerald' : 'badge-cyan'}`} style={{ fontSize: '0.68rem' }}>
+                                              {s.protocol === 'https' ? '🔒 HTTPS' : '🌐 HTTP'}
+                                            </span>
+                                          </div>
+
+                                          <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginBottom: '8px' }}>
+                                            Prefix: <code style={{ color: 'var(--accent-indigo)' }}>{s.namespace_prefix || 'none'}</code> • Transport: <strong style={{ color: '#fff' }}>{s.transport}</strong>
+                                          </div>
+
+                                          <div style={{
+                                            background: 'rgba(0, 0, 0, 0.4)',
+                                            padding: '6px 8px',
+                                            borderRadius: '4px',
+                                            fontSize: '0.72rem',
+                                            color: 'var(--text-muted)',
+                                            wordBreak: 'break-all',
+                                            marginBottom: '10px'
+                                          }}>
+                                            {s.url}
+                                          </div>
+
+                                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+                                            <span>Timeouts: {s.timeouts?.dial_ms || 5000}ms / {s.timeouts?.call_ms || 15000}ms</span>
+                                            <span>Auth: {s.auth_type?.toUpperCase() || 'NONE'}</span>
+                                          </div>
+
+                                          <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.05)', display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem' }}>
+                                            <span style={{ color: 'var(--text-dim)' }}>Tool Policies:</span>
+                                            <span style={{ color: 'var(--accent-emerald)', fontWeight: 600 }}>
+                                              {s.tool_policies?.length || 0} Managed Rules
+                                            </span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                  </div>
+                                ) : (
+                                  <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', fontStyle: 'italic' }}>
+                                    No upstream MCP servers attached to this project.
+                                  </div>
+                                )}
                               </div>
-                            )}
+                            ))}
+                          </div>
+                        ) : (
+                          <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-dim)' }}>
+                            No upstream connections match the active filters.
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* TAB 3: ENFORCED POLICIES & RULES */}
+                    {inspectionTab === 'policies' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                        {filteredEndpoints.length > 0 ? (
+                          filteredEndpoints.map((ep: any) => (
+                            <div key={ep.project_id} style={{ background: 'rgba(0, 0, 0, 0.25)', border: '1px solid var(--border-subtle)', borderRadius: '10px', padding: '18px' }}>
+                              <h4 style={{ margin: '0 0 14px 0', fontSize: '1rem', fontWeight: 600, color: '#f8fafc' }}>
+                                Policy Stack for {ep.project_name}
+                              </h4>
+
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px', marginBottom: '16px' }}>
+                                {/* Inbound Auth Policy Card */}
+                                <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '12px 14px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
+                                    INBOUND AUTHENTICATION
+                                  </div>
+                                  <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--accent-cyan)', marginBottom: '4px' }}>
+                                    Mode: {ep.inbound_auth?.mode?.toUpperCase() || 'NONE'}
+                                  </div>
+                                  {ep.inbound_auth?.issuer && (
+                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', wordBreak: 'break-all' }}>
+                                      Issuer: {ep.inbound_auth.issuer}
+                                    </div>
+                                  )}
+                                  <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', marginTop: '4px' }}>
+                                    Required Scopes: {ep.inbound_auth?.required_scopes?.join(', ') || 'mcp:tools, mcp:read'}
+                                  </div>
+                                </div>
+
+                                {/* Traffic Guardrails Card */}
+                                <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '12px 14px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
+                                    TRAFFIC &amp; RATE GUARDRAILS
+                                  </div>
+                                  <div style={{ fontSize: '0.82rem', color: 'var(--text-main)', marginBottom: '4px' }}>
+                                    Rate Limit: <strong style={{ color: '#fff' }}>{ep.rate_limits?.requests_per_minute || 600} req/min</strong>
+                                  </div>
+                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+                                    Burst Capacity: {ep.rate_limits?.burst || 50} tokens
+                                  </div>
+                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginTop: '2px' }}>
+                                    Circuit Breaker: Trip on {ep.circuit_breaker?.max_failures || 5} consecutive errors ({ep.circuit_breaker?.recovery_seconds || 30}s recovery)
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Tool Policies Table */}
+                              <div style={{ marginTop: '10px' }}>
+                                <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>
+                                  UPSTREAM TOOL POLICIES &amp; TRANSFORMS
+                                </div>
+
+                                {ep.downstream_servers?.some((s: any) => s.tool_policies?.length > 0) ? (
+                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                                    <thead>
+                                      <tr style={{ background: 'rgba(0, 0, 0, 0.4)', textAlign: 'left', borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                                        <th style={{ padding: '8px 10px' }}>Server Prefix</th>
+                                        <th style={{ padding: '8px 10px' }}>Tool Name</th>
+                                        <th style={{ padding: '8px 10px' }}>Policy Status</th>
+                                        <th style={{ padding: '8px 10px' }}>Gateway Alias / Rename</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {ep.downstream_servers.flatMap((s: any) =>
+                                        (s.tool_policies || []).map((tp: any, idx: number) => (
+                                          <tr key={`${s.id}-${idx}`} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
+                                            <td style={{ padding: '8px 10px', color: 'var(--accent-indigo)' }}>
+                                              <code>{s.namespace_prefix || 'root'}</code>
+                                            </td>
+                                            <td style={{ padding: '8px 10px', fontWeight: 600, color: '#f8fafc' }}>
+                                              {tp.tool_name}
+                                            </td>
+                                            <td style={{ padding: '8px 10px' }}>
+                                              <span className={`badge ${tp.enabled ? 'badge-emerald' : 'badge-rose'}`} style={{ fontSize: '0.68rem' }}>
+                                                {tp.enabled ? '✓ Allowed' : '✕ Blocked'}
+                                              </span>
+                                            </td>
+                                            <td style={{ padding: '8px 10px', color: tp.rename ? 'var(--accent-cyan)' : 'var(--text-dim)' }}>
+                                              {tp.rename ? <code>{tp.rename}</code> : 'Original Name'}
+                                            </td>
+                                          </tr>
+                                        ))
+                                      )}
+                                    </tbody>
+                                  </table>
+                                ) : (
+                                  <div style={{ fontSize: '0.78rem', color: 'var(--text-dim)', fontStyle: 'italic', padding: '8px' }}>
+                                    All upstream tools implicitly passed through with namespace prefixes.
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-dim)' }}>
+                            No policies match the active filters.
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* TAB 4: PROTOCOL & CERTIFICATE HUB */}
+                    {inspectionTab === 'tls' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px' }}>
+                          {/* Inbound TLS Panel */}
+                          <div style={{
+                            background: 'rgba(0, 0, 0, 0.3)',
+                            border: '1px solid rgba(16, 185, 129, 0.3)',
+                            borderRadius: '12px',
+                            padding: '20px'
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontSize: '1.2rem' }}>🔒</span>
+                                <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#f8fafc' }}>
+                                  Inbound Gateway Listener Security
+                                </h4>
+                              </div>
+                              <span className="badge badge-emerald">
+                                {inspectingGatewayData.gateway.protocol?.toUpperCase()}
+                              </span>
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.8rem' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '6px' }}>
+                                <span style={{ color: 'var(--text-muted)' }}>Inbound Port:</span>
+                                <strong style={{ color: '#fff' }}>:8080 (Data Plane)</strong>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '6px' }}>
+                                <span style={{ color: 'var(--text-muted)' }}>TLS Protocol Version:</span>
+                                <span className="badge badge-cyan" style={{ fontSize: '0.7rem' }}>
+                                  {inspectingGatewayData.gateway.tls_telemetry?.inbound?.min_version || 'TLS 1.2 / TLS 1.3'}
+                                </span>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '6px' }}>
+                                <span style={{ color: 'var(--text-muted)' }}>Certificate Mode:</span>
+                                <span style={{ color: 'var(--accent-emerald)', fontWeight: 600 }}>
+                                  {inspectingGatewayData.gateway.tls_telemetry?.inbound?.cert_mode === 'auto_cert'
+                                    ? 'ECDSA P-256 Auto-Cert'
+                                    : (inspectingGatewayData.gateway.tls_telemetry?.inbound?.cert_mode === 'custom_file' ? 'Custom PEM Certificate' : 'HTTP Mode')}
+                                </span>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '6px' }}>
+                                <span style={{ color: 'var(--text-muted)' }}>Configured SANs:</span>
+                                <span style={{ color: 'var(--accent-cyan)' }}>
+                                  {inspectingGatewayData.gateway.tls_telemetry?.inbound?.sans?.join(', ') || 'localhost, 127.0.0.1, ::1'}
+                                </span>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '6px' }}>
+                                <span style={{ color: 'var(--text-muted)' }}>Inbound Client Auth (mTLS):</span>
+                                <span className="badge badge-indigo" style={{ fontSize: '0.7rem' }}>
+                                  {inspectingGatewayData.gateway.tls_telemetry?.inbound?.client_auth || 'None (Standard Client TLS)'}
+                                </span>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <span style={{ color: 'var(--text-muted)' }}>Client CA Bundle:</span>
+                                <span style={{ color: inspectingGatewayData.gateway.tls_telemetry?.inbound?.has_client_ca ? 'var(--accent-emerald)' : 'var(--text-dim)' }}>
+                                  {inspectingGatewayData.gateway.tls_telemetry?.inbound?.has_client_ca ? 'Mounted & Verified' : 'Standard Web PKI'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Outbound Downstream TLS Panel */}
+                          <div style={{
+                            background: 'rgba(0, 0, 0, 0.3)',
+                            border: '1px solid rgba(6, 182, 212, 0.3)',
+                            borderRadius: '12px',
+                            padding: '20px'
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontSize: '1.2rem' }}>🌐</span>
+                                <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#f8fafc' }}>
+                                  Outbound Downstream MCP Security
+                                </h4>
+                              </div>
+                              <span className="badge badge-cyan">
+                                Downstream Pool
+                              </span>
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.8rem' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '6px' }}>
+                                <span style={{ color: 'var(--text-muted)' }}>Transport Architecture:</span>
+                                <strong style={{ color: '#fff' }}>SafeDialContext + TLSClientConfig</strong>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '6px' }}>
+                                <span style={{ color: 'var(--text-muted)' }}>Certificate Verification:</span>
+                                <span className={`badge ${inspectingGatewayData.gateway.tls_telemetry?.downstream?.insecure_skip_verify ? 'badge-rose' : 'badge-emerald'}`} style={{ fontSize: '0.7rem' }}>
+                                  {inspectingGatewayData.gateway.tls_telemetry?.downstream?.insecure_skip_verify ? '⚠️ InsecureSkipVerify Active' : '🔒 Strict Chain Verification'}
+                                </span>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '6px' }}>
+                                <span style={{ color: 'var(--text-muted)' }}>Custom Downstream CA Pool:</span>
+                                <span style={{ color: inspectingGatewayData.gateway.tls_telemetry?.downstream?.has_custom_ca ? 'var(--accent-emerald)' : 'var(--text-dim)' }}>
+                                  {inspectingGatewayData.gateway.tls_telemetry?.downstream?.has_custom_ca ? 'Configured (DOWNSTREAM_CA_CERT_FILE)' : 'System Root CA Bundle'}
+                                </span>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '6px' }}>
+                                <span style={{ color: 'var(--text-muted)' }}>Downstream Mutual TLS (mTLS):</span>
+                                <span style={{ color: inspectingGatewayData.gateway.tls_telemetry?.downstream?.has_client_cert ? 'var(--accent-emerald)' : 'var(--text-dim)' }}>
+                                  {inspectingGatewayData.gateway.tls_telemetry?.downstream?.has_client_cert ? 'Client Certificate & Key Active' : 'None (Standard One-way TLS)'}
+                                </span>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <span style={{ color: 'var(--text-muted)' }}>Downstream Min TLS Version:</span>
+                                <strong style={{ color: 'var(--accent-cyan)' }}>
+                                  {inspectingGatewayData.gateway.tls_telemetry?.downstream?.min_version || 'TLS 1.2'}
+                                </strong>
+                              </div>
+                            </div>
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  )}
 
-                  {/* TAB 4: PROTOCOL & CERTIFICATE HUB */}
-                  {inspectionTab === 'tls' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px' }}>
-                        {/* Inbound TLS Panel */}
-                        <div style={{
-                          background: 'rgba(0, 0, 0, 0.3)',
-                          border: '1px solid rgba(16, 185, 129, 0.3)',
-                          borderRadius: '12px',
-                          padding: '20px'
-                        }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontSize: '1.2rem' }}>🔒</span>
-                              <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#f8fafc' }}>
-                                Inbound Gateway Listener Security
-                              </h4>
-                            </div>
-                            <span className="badge badge-emerald">
-                              {inspectingGatewayData.gateway.protocol?.toUpperCase()}
-                            </span>
+                        {/* Detailed Connection Security Matrix */}
+                        <div style={{ background: 'rgba(0, 0, 0, 0.25)', borderRadius: '10px', padding: '16px', border: '1px solid var(--border-subtle)' }}>
+                          <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '12px' }}>
+                            DOWNSTREAM SERVER ENCRYPTION STATUS
                           </div>
-
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.8rem' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '6px' }}>
-                              <span style={{ color: 'var(--text-muted)' }}>Inbound Port:</span>
-                              <strong style={{ color: '#fff' }}>:8080 (Data Plane)</strong>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '6px' }}>
-                              <span style={{ color: 'var(--text-muted)' }}>TLS Protocol Version:</span>
-                              <span className="badge badge-cyan" style={{ fontSize: '0.7rem' }}>
-                                {inspectingGatewayData.gateway.tls_telemetry?.inbound?.min_version || 'TLS 1.2 / TLS 1.3'}
-                              </span>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '6px' }}>
-                              <span style={{ color: 'var(--text-muted)' }}>Certificate Mode:</span>
-                              <span style={{ color: 'var(--accent-emerald)', fontWeight: 600 }}>
-                                {inspectingGatewayData.gateway.tls_telemetry?.inbound?.cert_mode === 'auto_cert'
-                                  ? 'ECDSA P-256 Auto-Cert'
-                                  : (inspectingGatewayData.gateway.tls_telemetry?.inbound?.cert_mode === 'custom_file' ? 'Custom PEM Certificate' : 'HTTP Mode')}
-                              </span>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '6px' }}>
-                              <span style={{ color: 'var(--text-muted)' }}>Configured SANs:</span>
-                              <span style={{ color: 'var(--accent-cyan)' }}>
-                                {inspectingGatewayData.gateway.tls_telemetry?.inbound?.sans?.join(', ') || 'localhost, 127.0.0.1, ::1'}
-                              </span>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '6px' }}>
-                              <span style={{ color: 'var(--text-muted)' }}>Inbound Client Auth (mTLS):</span>
-                              <span className="badge badge-indigo" style={{ fontSize: '0.7rem' }}>
-                                {inspectingGatewayData.gateway.tls_telemetry?.inbound?.client_auth || 'None (Standard Client TLS)'}
-                              </span>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                              <span style={{ color: 'var(--text-muted)' }}>Client CA Bundle:</span>
-                              <span style={{ color: inspectingGatewayData.gateway.tls_telemetry?.inbound?.has_client_ca ? 'var(--accent-emerald)' : 'var(--text-dim)' }}>
-                                {inspectingGatewayData.gateway.tls_telemetry?.inbound?.has_client_ca ? 'Mounted & Verified' : 'Standard Web PKI'}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Outbound Downstream TLS Panel */}
-                        <div style={{
-                          background: 'rgba(0, 0, 0, 0.3)',
-                          border: '1px solid rgba(6, 182, 212, 0.3)',
-                          borderRadius: '12px',
-                          padding: '20px'
-                        }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontSize: '1.2rem' }}>🌐</span>
-                              <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#f8fafc' }}>
-                                Outbound Downstream MCP Security
-                              </h4>
-                            </div>
-                            <span className="badge badge-cyan">
-                              Downstream Pool
-                            </span>
-                          </div>
-
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.8rem' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '6px' }}>
-                              <span style={{ color: 'var(--text-muted)' }}>Transport Architecture:</span>
-                              <strong style={{ color: '#fff' }}>SafeDialContext + TLSClientConfig</strong>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '6px' }}>
-                              <span style={{ color: 'var(--text-muted)' }}>Certificate Verification:</span>
-                              <span className={`badge ${inspectingGatewayData.gateway.tls_telemetry?.downstream?.insecure_skip_verify ? 'badge-rose' : 'badge-emerald'}`} style={{ fontSize: '0.7rem' }}>
-                                {inspectingGatewayData.gateway.tls_telemetry?.downstream?.insecure_skip_verify ? '⚠️ InsecureSkipVerify Active' : '🔒 Strict Chain Verification'}
-                              </span>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '6px' }}>
-                              <span style={{ color: 'var(--text-muted)' }}>Custom Downstream CA Pool:</span>
-                              <span style={{ color: inspectingGatewayData.gateway.tls_telemetry?.downstream?.has_custom_ca ? 'var(--accent-emerald)' : 'var(--text-dim)' }}>
-                                {inspectingGatewayData.gateway.tls_telemetry?.downstream?.has_custom_ca ? 'Configured (DOWNSTREAM_CA_CERT_FILE)' : 'System Root CA Bundle'}
-                              </span>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '6px' }}>
-                              <span style={{ color: 'var(--text-muted)' }}>Downstream Mutual TLS (mTLS):</span>
-                              <span style={{ color: inspectingGatewayData.gateway.tls_telemetry?.downstream?.has_client_cert ? 'var(--accent-emerald)' : 'var(--text-dim)' }}>
-                                {inspectingGatewayData.gateway.tls_telemetry?.downstream?.has_client_cert ? 'Client Certificate & Key Active' : 'None (Standard One-way TLS)'}
-                              </span>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                              <span style={{ color: 'var(--text-muted)' }}>Downstream Min TLS Version:</span>
-                              <strong style={{ color: 'var(--accent-cyan)' }}>
-                                {inspectingGatewayData.gateway.tls_telemetry?.downstream?.min_version || 'TLS 1.2'}
-                              </strong>
-                            </div>
-                          </div>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                            <thead>
+                              <tr style={{ background: 'rgba(0, 0, 0, 0.4)', textAlign: 'left', borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                                <th style={{ padding: '8px 10px' }}>Upstream MCP Server</th>
+                                <th style={{ padding: '8px 10px' }}>Target URL</th>
+                                <th style={{ padding: '8px 10px' }}>Scheme</th>
+                                <th style={{ padding: '8px 10px' }}>Encryption &amp; Security</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {filteredEndpoints.flatMap((ep: any) =>
+                                (ep.downstream_servers || []).map((s: any) => (
+                                  <tr key={s.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
+                                    <td style={{ padding: '8px 10px', fontWeight: 600, color: '#f8fafc' }}>
+                                      {s.name} <span style={{ color: 'var(--text-dim)', fontSize: '0.72rem' }}>({ep.project_name})</span>
+                                    </td>
+                                    <td style={{ padding: '8px 10px', color: 'var(--accent-cyan)' }}>
+                                      <code>{s.url}</code>
+                                    </td>
+                                    <td style={{ padding: '8px 10px' }}>
+                                      <span className={`badge ${s.protocol === 'https' ? 'badge-emerald' : 'badge-amber'}`} style={{ fontSize: '0.68rem' }}>
+                                        {s.protocol?.toUpperCase()}
+                                      </span>
+                                    </td>
+                                    <td style={{ padding: '8px 10px' }}>
+                                      {s.protocol === 'https' ? (
+                                        <span style={{ color: 'var(--accent-emerald)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                          <span>🔒</span> TLS Encrypted
+                                        </span>
+                                      ) : (
+                                        <span style={{ color: 'var(--text-muted)' }}>
+                                          Plaintext HTTP (Internal Network)
+                                        </span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
                         </div>
                       </div>
-
-                      {/* Detailed Connection Security Matrix */}
-                      <div style={{ background: 'rgba(0, 0, 0, 0.25)', borderRadius: '10px', padding: '16px', border: '1px solid var(--border-subtle)' }}>
-                        <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '12px' }}>
-                          DOWNSTREAM SERVER ENCRYPTION STATUS
-                        </div>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
-                          <thead>
-                            <tr style={{ background: 'rgba(0, 0, 0, 0.4)', textAlign: 'left', borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
-                              <th style={{ padding: '8px 10px' }}>Upstream MCP Server</th>
-                              <th style={{ padding: '8px 10px' }}>Target URL</th>
-                              <th style={{ padding: '8px 10px' }}>Scheme</th>
-                              <th style={{ padding: '8px 10px' }}>Encryption &amp; Security</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {inspectingGatewayData.endpoints?.flatMap((ep: any) =>
-                              (ep.downstream_servers || []).map((s: any) => (
-                                <tr key={s.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
-                                  <td style={{ padding: '8px 10px', fontWeight: 600, color: '#f8fafc' }}>
-                                    {s.name} <span style={{ color: 'var(--text-dim)', fontSize: '0.72rem' }}>({ep.project_name})</span>
-                                  </td>
-                                  <td style={{ padding: '8px 10px', color: 'var(--accent-cyan)' }}>
-                                    <code>{s.url}</code>
-                                  </td>
-                                  <td style={{ padding: '8px 10px' }}>
-                                    <span className={`badge ${s.protocol === 'https' ? 'badge-emerald' : 'badge-amber'}`} style={{ fontSize: '0.68rem' }}>
-                                      {s.protocol?.toUpperCase()}
-                                    </span>
-                                  </td>
-                                  <td style={{ padding: '8px 10px' }}>
-                                    {s.protocol === 'https' ? (
-                                      <span style={{ color: 'var(--accent-emerald)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                        <span>🔒</span> TLS Encrypted
-                                      </span>
-                                    ) : (
-                                      <span style={{ color: 'var(--text-muted)' }}>
-                                        Plaintext HTTP (Internal Network)
-                                      </span>
-                                    )}
-                                  </td>
-                                </tr>
-                              ))
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
+                    )}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Modal Footer */}
