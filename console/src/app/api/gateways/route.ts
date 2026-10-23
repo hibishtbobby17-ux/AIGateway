@@ -17,20 +17,71 @@ export async function GET(req: NextRequest) {
 
     const result = await pool.query(`
       SELECT 
-        id,
-        name,
-        last_seen_at,
-        version,
-        applied_config_version,
-        status,
-        revoked_at,
-        created_at,
-        updated_at
-      FROM gateway_instances
-      ORDER BY created_at ASC
+        g.id,
+        g.name,
+        g.last_seen_at,
+        g.version,
+        g.applied_config_version,
+        g.status,
+        COALESCE(g.protocol, 'http') as protocol,
+        COALESCE(g.tls_enabled, false) as tls_enabled,
+        g.revoked_at,
+        g.created_at,
+        g.updated_at,
+        COALESCE(
+          json_agg(
+            DISTINCT jsonb_build_object(
+              'id', p.id,
+              'name', p.name,
+              'slug', p.slug,
+              'status', p.status,
+              'endpoint_path', '/p/' || p.slug || '/mcp',
+              'server_count', (SELECT COUNT(*)::int FROM mcp_servers s WHERE s.project_id = p.id AND s.enabled = true)
+            )
+          ) FILTER (WHERE p.id IS NOT NULL),
+          '[]'
+        ) as bound_projects
+      FROM gateway_instances g
+      LEFT JOIN gateway_project_bindings gpb ON gpb.gateway_id = g.id
+      LEFT JOIN projects p ON p.id = gpb.project_id AND p.status = 'active'
+      GROUP BY g.id
+      ORDER BY g.created_at ASC
     `);
 
-    return NextResponse.json({ gateways: result.rows });
+    // Decorate with live status & base URLs
+    const now = Date.now();
+    const defaultPublicUrl = process.env.GATEWAY_PUBLIC_URL || 'http://localhost:8080';
+
+    const gatewaysWithDetails = result.rows.map((gw: any) => {
+      const lastSeen = gw.last_seen_at ? new Date(gw.last_seen_at).getTime() : 0;
+      const isOnline = gw.status === 'active' && (now - lastSeen < 180000); // within 3 minutes
+      
+      const scheme = (gw.protocol === 'https' || gw.tls_enabled) ? 'https' : 'http';
+      let baseUrl = defaultPublicUrl;
+      try {
+        const u = new URL(defaultPublicUrl);
+        u.protocol = scheme;
+        baseUrl = u.origin;
+      } catch {
+        baseUrl = `${scheme}://localhost:8080`;
+      }
+
+      const enrichedProjects = (gw.bound_projects || []).map((bp: any) => ({
+        ...bp,
+        endpoint_url: `${baseUrl}${bp.endpoint_path}`,
+      }));
+
+      return {
+        ...gw,
+        protocol: scheme,
+        is_online: isOnline,
+        base_url: baseUrl,
+        bound_projects: enrichedProjects,
+        total_endpoints: enrichedProjects.length,
+      };
+    });
+
+    return NextResponse.json({ gateways: gatewaysWithDetails });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

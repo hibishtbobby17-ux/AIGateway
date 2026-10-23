@@ -23,20 +23,48 @@ function verifyGatewayToken(req: NextRequest): { gatewayId: string; gatewayName:
   }
 }
 
-async function fetchLatestConfig() {
+async function fetchLatestConfig(gatewayId?: string) {
   await initDatabase();
 
-  // 1. Get max config version across projects
-  const maxVerRes = await pool.query('SELECT COALESCE(MAX(config_version), 1) as max_version FROM projects');
-  const maxVersion = parseInt(maxVerRes.rows[0].max_version, 10);
-
-  // 2. Fetch all active projects
-  const projRes = await pool.query(`
+  // 1. Check if this gateway has specific project bindings configured
+  let projQuery = `
     SELECT id, name, slug, status, settings, config_version
     FROM projects
     WHERE status = 'active'
     ORDER BY created_at ASC
-  `);
+  `;
+  const queryParams: any[] = [];
+
+  if (gatewayId) {
+    const bindingCheck = await pool.query(
+      'SELECT 1 FROM gateway_project_bindings WHERE gateway_id = $1 LIMIT 1',
+      [gatewayId]
+    );
+    if (bindingCheck.rows.length > 0) {
+      // Gateway has targeted project bindings: only push specific projects & rules
+      projQuery = `
+        SELECT p.id, p.name, p.slug, p.status, p.settings, p.config_version
+        FROM projects p
+        JOIN gateway_project_bindings gpb ON gpb.project_id = p.id
+        WHERE p.status = 'active' AND gpb.gateway_id = $1
+        ORDER BY p.created_at ASC
+      `;
+      queryParams.push(gatewayId);
+    }
+  }
+
+  // 2. Fetch filtered projects
+  const projRes = await pool.query(projQuery, queryParams);
+
+  // 3. Compute max config version among targeted projects
+  let maxVersion = 1;
+  if (projRes.rows.length > 0) {
+    for (const p of projRes.rows) {
+      if (p.config_version > maxVersion) {
+        maxVersion = p.config_version;
+      }
+    }
+  }
 
   // 3. Fetch all servers with their tool policies and oauth configs
   const serversRes = await pool.query(`
@@ -187,7 +215,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const configPayload = await fetchLatestConfig();
+    const configPayload = await fetchLatestConfig(gw.gatewayId);
     return NextResponse.json(configPayload, {
       headers: {
         'ETag': `"v${configPayload.config_version}"`,

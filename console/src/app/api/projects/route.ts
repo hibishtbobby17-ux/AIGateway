@@ -23,9 +23,22 @@ export async function GET(req: NextRequest) {
         p.config_version,
         p.created_at,
         p.updated_at,
-        COUNT(s.id)::int as server_count
+        COUNT(DISTINCT s.id)::int as server_count,
+        COALESCE(
+          json_agg(
+            DISTINCT jsonb_build_object(
+              'id', g.id,
+              'name', g.name,
+              'status', g.status,
+              'version', g.version
+            )
+          ) FILTER (WHERE g.id IS NOT NULL),
+          '[]'
+        ) as gateways
       FROM projects p
       LEFT JOIN mcp_servers s ON s.project_id = p.id
+      LEFT JOIN gateway_project_bindings gpb ON gpb.project_id = p.id
+      LEFT JOIN gateway_instances g ON g.id = gpb.gateway_id
       WHERE p.org_id = $1
       GROUP BY p.id
       ORDER BY p.created_at ASC
@@ -46,7 +59,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { name, slug, settings } = body;
+    const { name, slug, settings, gateway_ids, gateway_id } = body;
 
     if (!name || !name.trim()) {
       return NextResponse.json({ error: 'Project name is required' }, { status: 400 });
@@ -79,13 +92,46 @@ export async function POST(req: NextRequest) {
 
     const createdProject = insRes.rows[0];
 
+    // Bind project to target gateway instances
+    const targetGatewayIds: string[] = [];
+    if (Array.isArray(gateway_ids)) {
+      targetGatewayIds.push(...gateway_ids.filter(Boolean));
+    } else if (gateway_id && typeof gateway_id === 'string') {
+      targetGatewayIds.push(gateway_id.trim());
+    }
+
+    const boundGateways: any[] = [];
+    for (const gId of targetGatewayIds) {
+      try {
+        const gwRes = await pool.query(
+          'INSERT INTO gateway_project_bindings (gateway_id, project_id) VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING gateway_id',
+          [gId, createdProject.id]
+        );
+        if (gwRes.rows.length > 0) {
+          const gwInfo = await pool.query('SELECT id, name, status, version FROM gateway_instances WHERE id = $1', [gId]);
+          if (gwInfo.rows.length > 0) {
+            boundGateways.push(gwInfo.rows[0]);
+          }
+        }
+      } catch (bindErr) {
+        console.warn('Failed to bind project to gateway:', bindErr);
+      }
+    }
+
+    createdProject.gateways = boundGateways;
+
     const { logAudit } = await import('@/lib/audit');
     await logAudit({
       orgId: session.orgId,
       actor: session.email,
       action: 'project.create',
       target: `project:${createdProject.slug} (${createdProject.id})`,
-      diff: { name: createdProject.name, slug: createdProject.slug, status: createdProject.status },
+      diff: {
+        name: createdProject.name,
+        slug: createdProject.slug,
+        status: createdProject.status,
+        gateways: targetGatewayIds,
+      },
     });
 
     return NextResponse.json({ project: createdProject }, { status: 201 });

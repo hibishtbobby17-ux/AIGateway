@@ -38,9 +38,16 @@ func NewDownstreamPool(consoleURL string, logger *slog.Logger) *DownstreamPool {
 		strings.Contains(consoleURL, "127.0.0.1") ||
 		strings.Contains(consoleURL, "console:")
 
+	downstreamTLSOpts := LoadDownstreamTLSOptionsFromEnv()
+	tlsClientConfig, err := SetupDownstreamTLS(downstreamTLSOpts, logger)
+	if err != nil {
+		logger.Warn("failed to configure downstream TLS, using system defaults", "error", err)
+	}
+
 	transport := &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
 		DialContext:           SafeDialContext(allowLocal),
+		TLSClientConfig:       tlsClientConfig,
 		MaxIdleConns:          256,
 		MaxIdleConnsPerHost:   64,
 		IdleConnTimeout:       90 * time.Second,

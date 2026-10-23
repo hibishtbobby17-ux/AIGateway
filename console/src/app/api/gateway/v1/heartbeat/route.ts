@@ -23,6 +23,8 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const { version, applied_config_version, metrics } = body;
+    const protocol = body.protocol || metrics?.protocol || 'http';
+    const tlsEnabled = body.tls_enabled ?? metrics?.tls_enabled ?? (protocol === 'https');
     const gatewayId = payload.gatewayId;
 
     await initDatabase();
@@ -45,12 +47,18 @@ export async function POST(req: NextRequest) {
         last_seen_at = NOW(),
         version = COALESCE($1, version),
         applied_config_version = COALESCE($2, applied_config_version),
+        protocol = COALESCE($3, protocol),
+        tls_enabled = COALESCE($4, tls_enabled),
+        metrics = COALESCE($5, metrics),
         status = 'active',
         updated_at = NOW()
-      WHERE id = $3
+      WHERE id = $6
     `, [
       version || null,
       applied_config_version !== undefined ? applied_config_version : null,
+      protocol,
+      tlsEnabled,
+      metrics ? JSON.stringify(metrics) : null,
       gatewayId
     ]);
 

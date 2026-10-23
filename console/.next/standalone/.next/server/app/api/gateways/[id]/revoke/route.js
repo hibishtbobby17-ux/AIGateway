@@ -114,6 +114,9 @@
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
       CREATE UNIQUE INDEX IF NOT EXISTS idx_gateway_instances_name ON gateway_instances(name);
+      ALTER TABLE gateway_instances ADD COLUMN IF NOT EXISTS protocol VARCHAR(20) DEFAULT 'http';
+      ALTER TABLE gateway_instances ADD COLUMN IF NOT EXISTS tls_enabled BOOLEAN DEFAULT false;
+      ALTER TABLE gateway_instances ADD COLUMN IF NOT EXISTS metrics JSONB DEFAULT '{}'::jsonb;
     `),await e.query(`
       CREATE TABLE IF NOT EXISTS gateway_project_bindings (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -3,15 +3,15 @@
       FROM mcp_servers s
       JOIN projects p ON p.id = s.project_id
       WHERE s.id = $1 AND p.org_id = $2
-    `,[t.id,a.orgId]);if(0===r.rows.length)return s.NextResponse.json({error:"MCP Server not found"},{status:404});let i=r.rows[0],o=i.url;o.includes("localhost:3000")&&(o=o.replace("localhost:3000","127.0.0.1:3000"));let n=new AbortController,N=setTimeout(()=>n.abort(),7e3),d=await fetch(o,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",method:"tools/list",params:{},id:1}),signal:n.signal});if(clearTimeout(N),!d.ok)return s.NextResponse.json({error:`Downstream MCP server returned HTTP ${d.status}`},{status:502});let L=await d.json();if(L.error)return s.NextResponse.json({error:`Downstream JSON-RPC error: ${L.error.message||"Unknown error"}`},{status:502});let A=L.result?.tools||[],_=0,U=await T.d.query("SELECT id, tool_name, enabled, rename FROM tool_policies WHERE mcp_server_id = $1",[t.id]),c=new Map;for(let e of U.rows)c.set(e.tool_name,{id:e.id,enabled:e.enabled,rename:e.rename});let u=[];for(let e of A){let a=c.get(e.name);!a&&(a=(await T.d.query(`
+    `,[t.id,a.orgId]);if(0===r.rows.length)return s.NextResponse.json({error:"MCP Server not found"},{status:404});let i=r.rows[0],o=i.url;o.includes("localhost:3000")&&(o=o.replace("localhost:3000","127.0.0.1:3000"));let n=new AbortController,N=setTimeout(()=>n.abort(),7e3),d=await fetch(o,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",method:"tools/list",params:{},id:1}),signal:n.signal});if(clearTimeout(N),!d.ok)return s.NextResponse.json({error:`Downstream MCP server returned HTTP ${d.status}`},{status:502});let L=await d.json();if(L.error)return s.NextResponse.json({error:`Downstream JSON-RPC error: ${L.error.message||"Unknown error"}`},{status:502});let A=L.result?.tools||[],_=0,U=await T.d.query("SELECT id, tool_name, enabled, rename FROM tool_policies WHERE mcp_server_id = $1",[t.id]),c=new Map;for(let e of U.rows)c.set(e.tool_name,{id:e.id,enabled:e.enabled,rename:e.rename});let O=[];for(let e of A){let a=c.get(e.name);!a&&(a=(await T.d.query(`
           INSERT INTO tool_policies (mcp_server_id, tool_name, enabled)
           VALUES ($1, $2, true)
           RETURNING id, tool_name, enabled, rename
-        `,[t.id,e.name])).rows[0],_++),u.push({id:a?.id,name:e.name,virtual_name:`${i.namespace_prefix}__${a?.rename||e.name}`,description:e.description||"",inputSchema:e.inputSchema||{},enabled:!a||a.enabled,rename:a?.rename||null,server_id:i.id,server_name:i.name,namespace_prefix:i.namespace_prefix})}return await T.d.query(`
+        `,[t.id,e.name])).rows[0],_++),O.push({id:a?.id,name:e.name,virtual_name:`${i.namespace_prefix}__${a?.rename||e.name}`,description:e.description||"",inputSchema:e.inputSchema||{},enabled:!a||a.enabled,rename:a?.rename||null,server_id:i.id,server_name:i.name,namespace_prefix:i.namespace_prefix})}return await T.d.query(`
       UPDATE mcp_servers
       SET health_status = 'healthy', last_checked_at = NOW()
       WHERE id = $1
-    `,[t.id]),_>0&&await T.d.query("UPDATE projects SET config_version = (SELECT COALESCE(MAX(config_version), 0) + 1 FROM projects), updated_at = NOW() WHERE id = $1",[i.project_id]),s.NextResponse.json({success:!0,server_id:i.id,server_name:i.name,tools_count:u.length,new_tools_added:_,tools:u})}catch(e){return console.error("Tool discovery failed:",e),s.NextResponse.json({error:e.message||"Discovery request timed out"},{status:500})}}async function n(e,{params:t}){try{let a=(0,E.v)(e);if(!a)return s.NextResponse.json({error:"Unauthorized"},{status:401});await (0,T.q)();let r=await T.d.query(`
+    `,[t.id]),_>0&&await T.d.query("UPDATE projects SET config_version = (SELECT COALESCE(MAX(config_version), 0) + 1 FROM projects), updated_at = NOW() WHERE id = $1",[i.project_id]),s.NextResponse.json({success:!0,server_id:i.id,server_name:i.name,tools_count:O.length,new_tools_added:_,tools:O})}catch(e){return console.error("Tool discovery failed:",e),s.NextResponse.json({error:e.message||"Discovery request timed out"},{status:500})}}async function n(e,{params:t}){try{let a=(0,E.v)(e);if(!a)return s.NextResponse.json({error:"Unauthorized"},{status:401});await (0,T.q)();let r=await T.d.query(`
       SELECT 
         p.id,
         p.tool_name,
@@ -134,6 +134,9 @@
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
       CREATE UNIQUE INDEX IF NOT EXISTS idx_gateway_instances_name ON gateway_instances(name);
+      ALTER TABLE gateway_instances ADD COLUMN IF NOT EXISTS protocol VARCHAR(20) DEFAULT 'http';
+      ALTER TABLE gateway_instances ADD COLUMN IF NOT EXISTS tls_enabled BOOLEAN DEFAULT false;
+      ALTER TABLE gateway_instances ADD COLUMN IF NOT EXISTS metrics JSONB DEFAULT '{}'::jsonb;
     `),await e.query(`
       CREATE TABLE IF NOT EXISTS gateway_project_bindings (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

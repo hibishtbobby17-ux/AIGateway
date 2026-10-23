@@ -95,6 +95,8 @@ type Gateway struct {
 	inFlight      int64
 	maxInFlight   int64
 	maxBodySize   int64
+	isTLS         bool
+	tlsTelemetry  map[string]interface{}
 	mu            sync.RWMutex
 	token         string
 	tokenExpiry   time.Time
@@ -141,10 +143,20 @@ func main() {
 		}
 	}
 
+	tlsOpts := LoadServerTLSOptionsFromEnv()
+	serverTLSConfig, err := SetupServerTLS(tlsOpts, logger)
+	if err != nil {
+		logger.Error("failed to configure inbound TLS", "error", err)
+		os.Exit(1)
+	}
+
 	breakers := NewBreakerRegistry()
 	pool := NewDownstreamPool(consoleURL, logger)
 	pool.SetBreakerRegistry(breakers)
 	aggregator := NewMCPAggregator(pool, logger)
+
+	downTLSOpts := LoadDownstreamTLSOptionsFromEnv()
+	tlsTelemetry := GetTLSTelemetry(tlsOpts, downTLSOpts)
 
 	gw := &Gateway{
 		configPath:    configCachePath,
@@ -156,12 +168,14 @@ func main() {
 		httpClient: &http.Client{
 			Timeout: 15 * time.Second,
 		},
-		pool:        pool,
-		aggregator:  aggregator,
-		breakers:    breakers,
-		rateLimiter: NewTokenBucketLimiter(600, 50),
-		maxInFlight: maxInFlight,
-		maxBodySize: 5 * 1024 * 1024, // 5MB
+		pool:         pool,
+		aggregator:   aggregator,
+		breakers:     breakers,
+		rateLimiter:  NewTokenBucketLimiter(600, 50),
+		maxInFlight:  maxInFlight,
+		maxBodySize:  5 * 1024 * 1024, // 5MB
+		isTLS:        tlsOpts.Enabled,
+		tlsTelemetry: tlsTelemetry,
 	}
 
 	metrics := NewMetricsCollector(breakers, &gw.inFlight)
@@ -208,15 +222,24 @@ func main() {
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%s", port),
 		Handler:      mux,
+		TLSConfig:    serverTLSConfig,
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 	}
 
 	go func() {
-		logger.Info("headless gateway listening", "port", port)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("gateway server error", "error", err)
-			os.Exit(1)
+		if tlsOpts.Enabled {
+			logger.Info("headless gateway listening with TLS/HTTPS", "port", port, "min_version", tlsOpts.MinVersion)
+			if err := server.ListenAndServeTLS(tlsOpts.CertFile, tlsOpts.KeyFile); err != nil && err != http.ErrServerClosed {
+				logger.Error("gateway TLS server error", "error", err)
+				os.Exit(1)
+			}
+		} else {
+			logger.Info("headless gateway listening with HTTP", "port", port)
+			if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				logger.Error("gateway server error", "error", err)
+				os.Exit(1)
+			}
 		}
 	}()
 
@@ -275,10 +298,11 @@ func (g *Gateway) handleOAuthProtectedResource(w http.ResponseWriter, r *http.Re
 	if issuer != "" {
 		authServers = append(authServers, issuer)
 	}
+	scheme := RequestScheme(r, g.isTLS)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"resource":              fmt.Sprintf("http://%s/p/%s/mcp", r.Host, slug),
+		"resource":              fmt.Sprintf("%s://%s/p/%s/mcp", scheme, r.Host, slug),
 		"authorization_servers": authServers,
 		"scopes_supported":      []string{"mcp:tools", "mcp:read", "mcp:write"},
 	})
@@ -821,13 +845,23 @@ func (g *Gateway) sendHeartbeat() {
 		appliedVersion = currentCfg.Version
 	}
 
+	protocol := "http"
+	if g.isTLS {
+		protocol = "https"
+	}
+
 	payload := map[string]interface{}{
 		"gateway_id":             g.gatewayID,
 		"version":                "1.0.0",
+		"protocol":               protocol,
+		"tls_enabled":            g.isTLS,
 		"applied_config_version": appliedVersion,
 		"metrics": map[string]interface{}{
-			"goroutines": 10,
-			"status":     "healthy",
+			"goroutines":    10,
+			"status":        "healthy",
+			"protocol":      protocol,
+			"tls_enabled":   g.isTLS,
+			"tls_telemetry": g.tlsTelemetry,
 		},
 	}
 	raw, _ := json.Marshal(payload)
