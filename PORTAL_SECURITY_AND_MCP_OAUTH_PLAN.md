@@ -311,6 +311,27 @@ sequenceDiagram
     - ClickHouse Database (`:8123`)
     - PostgreSQL Store (`:5432`)
 
+### Phase 5: Web UI/UX, Accessibility (WCAG 2.2 AA) & Performance Engineering
+- [x] **5.1 Design Tokens & WCAG 2.2 AA Accessibility Tokens:**
+  - Added accessible high-contrast `:focus-visible` rings (`outline: 2px solid var(--cyan)`, `outline-offset: 2px`) in [index.css](file:///c:/Users/Administrator/Downloads/project/project_alpha/web/src/index.css) across all interactive elements (`button`, `a`, `input`, `select`, `textarea`, `role="tab"`).
+  - Added `.skip-link` component allowing keyboard and screen-reader users to jump directly to `#main-content`.
+  - Added `.sr-only` utility for screen-reader live announcements without visual layout shifts.
+  - Implemented `@media (prefers-reduced-motion: reduce)` disabling transitions, animations, and pulse dots for vestibular safety.
+  - Enforced touch target minimums (`min-height: 44px`) and responsive layout breakpoints for mobile and tablet views.
+- [x] **5.2 Accessible Navigation & Landmark Semantics:**
+  - Updated [Navbar.tsx](file:///c:/Users/Administrator/Downloads/project/project_alpha/web/src/components/Navbar.tsx) with semantic `role="tablist"` and `role="tab"`, `aria-selected`, `id`, and keyboard roving tab navigation.
+  - Enhanced modals across views with `role="dialog"`, `aria-modal="true"`, `aria-labelledby`, and global `Escape` key listeners to dismiss modals.
+  - Updated [App.tsx](file:///c:/Users/Administrator/Downloads/project/project_alpha/web/src/App.tsx) with `<main id="main-content" tabIndex={-1}>` and live polite status announcements on initial auth checks (`role="status"`).
+- [x] **5.3 Form Ergonomics & Duplicate Submission Guards:**
+  - Updated [LoginView.tsx](file:///c:/Users/Administrator/Downloads/project/project_alpha/web/src/components/LoginView.tsx) with explicit `htmlFor` and `id` bindings for `Username`, `Password`, and `Tenant ID`.
+  - Added `role="alert"` and `aria-live="assertive"` on authentication errors.
+  - Added `aria-busy` and disabled states on submit buttons to prevent double-submissions during async network requests.
+  - Updated [MCPServersView.tsx](file:///c:/Users/Administrator/Downloads/project/project_alpha/web/src/components/MCPServersView.tsx) and [SSOConfigView.tsx](file:///c:/Users/Administrator/Downloads/project/project_alpha/web/src/components/SSOConfigView.tsx) with accessible dialog landmarks, explicit labels, and Escape dismissal.
+- [x] **5.4 Performance Engineering & Core Web Vitals Targets:**
+  - Target metrics alignment: **LCP <= 2.5s**, **INP <= 200ms**, **CLS <= 0.1**, **Lighthouse Performance >= 90**, **Accessibility >= 95**.
+  - Minimized client-side bundle size and zero unneeded runtime dependencies.
+  - Prevention of Cumulative Layout Shifts (CLS) using predefined aspect ratios and skeleton/fixed dimensions.
+
 ---
 
 ## 6. Verification & Quality Gates
@@ -318,4 +339,6 @@ sequenceDiagram
 2. **Console Authentication Verification:** Verify unauthenticated users cannot access `/api/v1/*` or console views without valid credentials.
 3. **SSO Discovery Test:** Verify that adding an Okta/Auth0/Google provider succeeds in querying the remote discovery document and saving mappings.
 4. **MCP OAuth End-to-End Test:** Register a mock OAuth2-protected MCP server, execute a tool call, and verify that the gateway obtains and passes the Bearer token in the outbound request.
-5. **Docker Compose Verification:** Run `make compose-up` to ensure all containers start cleanly in a healthy state.
+5. **UI Build & Accessibility Compilation Gate:** Run `npm.cmd run build` in `web/` to ensure 100% TypeScript type check and asset compilation with zero errors.
+6. **Docker Compose Verification:** Run `make compose-up` to ensure all containers start cleanly in a healthy state.
+

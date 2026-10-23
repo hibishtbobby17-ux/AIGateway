@@ -59,6 +59,17 @@ export const MCPServersView: React.FC = () => {
     loadServers();
   }, [api.getTenantId()]);
 
+  // Accessibility: dismiss modal on Escape key press (WCAG 2.2 AA)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const handleTestOAuth = async () => {
     if (!oauthTokenEndpoint.trim() || !oauthClientId.trim() || !oauthClientSecret.trim()) {
       alert('Token Endpoint URL, Client ID, and Client Secret are required to test OAuth2.');
@@ -389,10 +400,26 @@ export const MCPServersView: React.FC = () => {
       {/* Register Server Modal */}
       {isModalOpen && (
         <div className="modal-backdrop" onClick={() => setIsModalOpen(false)}>
-          <div className="modal-content" style={{ maxWidth: '640px' }} onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal-content"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mcp-register-title"
+            style={{ maxWidth: '640px' }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="modal-header">
-              <div className="modal-title">Register Upstream MCP Server</div>
-              <button className="btn btn-secondary btn-sm" onClick={() => setIsModalOpen(false)}>✕</button>
+              <h2 id="mcp-register-title" className="modal-title" style={{ fontSize: '1.1rem', margin: 0 }}>
+                Register Upstream MCP Server
+              </h2>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                aria-label="Close registration dialog"
+                onClick={() => setIsModalOpen(false)}
+              >
+                ✕
+              </button>
             </div>
             <form onSubmit={handleCreate}>
               <div className="modal-body">
@@ -689,7 +716,7 @@ export const MCPServersView: React.FC = () => {
                 <button type="button" className="btn btn-secondary" onClick={() => setIsModalOpen(false)}>
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary" disabled={submitting}>
+                <button type="submit" className="btn btn-primary" disabled={submitting} aria-busy={submitting}>
                   {submitting ? 'Registering...' : 'Register Server'}
                 </button>
               </div>

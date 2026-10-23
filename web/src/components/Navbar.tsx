@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { api } from '../api/client';
 import { UserProfile } from '../types';
 
@@ -15,6 +15,18 @@ export const Navbar: React.FC<Props> = ({ activeTab, onTabChange, tenantId, onTe
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isServicesModalOpen, setIsServicesModalOpen] = useState(false);
   const [tokenInput, setTokenInput] = useState(api.getToken());
+
+  // Listen for Escape key to close dialogs (WCAG 2.2 AA)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsAuthModalOpen(false);
+        setIsServicesModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const handleSaveToken = (e: React.FormEvent) => {
     e.preventDefault();
@@ -125,16 +137,21 @@ export const Navbar: React.FC<Props> = ({ activeTab, onTabChange, tenantId, onTe
       </header>
 
       {/* Primary Tab Navigation */}
-      <nav className="tabs-container">
+      <nav className="tabs-container" role="tablist" aria-label="Management Console Navigation">
         {tabs.map((tab) => {
           const isActive = activeTab === tab.id;
           return (
             <button
               key={tab.id}
+              role="tab"
+              id={`tab-${tab.id}`}
+              aria-selected={isActive}
+              aria-controls={`panel-${tab.id}`}
+              tabIndex={isActive ? 0 : -1}
               className={`tab-btn ${isActive ? 'active' : ''}`}
               onClick={() => onTabChange(tab.id)}
             >
-              <span>{tab.icon}</span>
+              <span aria-hidden="true">{tab.icon}</span>
               <span>{tab.label}</span>
             </button>
           );
@@ -144,10 +161,25 @@ export const Navbar: React.FC<Props> = ({ activeTab, onTabChange, tenantId, onTe
       {/* Auth Modal */}
       {isAuthModalOpen && (
         <div className="modal-backdrop" onClick={() => setIsAuthModalOpen(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal-content"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="auth-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="modal-header">
-              <div className="modal-title">Administrative Bearer Credentials</div>
-              <button className="btn btn-secondary btn-sm" onClick={() => setIsAuthModalOpen(false)}>✕</button>
+              <h2 id="auth-modal-title" className="modal-title" style={{ fontSize: '1.1rem', margin: 0 }}>
+                Administrative Bearer Credentials
+              </h2>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                aria-label="Close credentials dialog"
+                onClick={() => setIsAuthModalOpen(false)}
+              >
+                ✕
+              </button>
             </div>
             <form onSubmit={handleSaveToken}>
               <div className="modal-body">
@@ -155,13 +187,17 @@ export const Navbar: React.FC<Props> = ({ activeTab, onTabChange, tenantId, onTe
                   Inject an authorization bearer token (JWT or API Key) into management requests for role verification.
                 </p>
                 <div className="form-group">
-                  <label className="form-label">Bearer Token</label>
+                  <label htmlFor="nav-bearer-token" className="form-label">
+                    Bearer Token
+                  </label>
                   <input
+                    id="nav-bearer-token"
                     type="password"
                     className="form-input"
                     placeholder="eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
                     value={tokenInput}
                     onChange={(e) => setTokenInput(e.target.value)}
+                    autoComplete="off"
                   />
                 </div>
               </div>
@@ -185,21 +221,38 @@ export const Navbar: React.FC<Props> = ({ activeTab, onTabChange, tenantId, onTe
           </div>
         </div>
       )}
+
       {/* Cluster Infrastructure & Services Modal */}
       {isServicesModalOpen && (
         <div className="modal-backdrop" onClick={() => setIsServicesModalOpen(false)}>
-          <div className="modal-content" style={{ maxWidth: '820px' }} onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal-content"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="services-hub-title"
+            style={{ maxWidth: '820px' }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                <span style={{ fontSize: '1.4rem' }}>⚡</span>
+                <span style={{ fontSize: '1.4rem' }} aria-hidden="true">⚡</span>
                 <div>
-                  <div className="modal-title">Unified Cluster Infrastructure &amp; Services</div>
+                  <h2 id="services-hub-title" className="modal-title" style={{ fontSize: '1.1rem', margin: 0 }}>
+                    Unified Cluster Infrastructure &amp; Services
+                  </h2>
                   <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                     Single-pane directory of all containerized runtime services, telemetry endpoints, and stores
                   </div>
                 </div>
               </div>
-              <button className="btn btn-secondary btn-sm" onClick={() => setIsServicesModalOpen(false)}>✕</button>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                aria-label="Close services dialog"
+                onClick={() => setIsServicesModalOpen(false)}
+              >
+                ✕
+              </button>
             </div>
 
             <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '1rem', maxHeight: '580px', overflowY: 'auto' }}>
@@ -370,7 +423,7 @@ export const Navbar: React.FC<Props> = ({ activeTab, onTabChange, tenantId, onTe
               <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                 All 6 services running in local Docker Compose mesh with zero port conflicts
               </div>
-              <button className="btn btn-secondary" onClick={() => setIsServicesModalOpen(false)}>
+              <button type="button" className="btn btn-secondary" onClick={() => setIsServicesModalOpen(false)}>
                 Close Hub
               </button>
             </div>

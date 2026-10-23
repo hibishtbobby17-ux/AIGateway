@@ -97,6 +97,17 @@ export const SSOConfigView: React.FC = () => {
     fetchProviders();
   }, []);
 
+  // Accessibility: dismiss modal on Escape key press (WCAG 2.2 AA)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const openNewModal = (preset?: Preset) => {
     setEditingId(null);
     setDiscoveryResult(null);
@@ -461,12 +472,26 @@ export const SSOConfigView: React.FC = () => {
       {/* Register / Edit Modal */}
       {isModalOpen && (
         <div className="modal-backdrop" onClick={() => setIsModalOpen(false)}>
-          <div className="modal-content" style={{ maxWidth: '640px' }} onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal-content"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="sso-dialog-title"
+            style={{ maxWidth: '640px' }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="modal-header">
-              <div className="modal-title">
+              <h2 id="sso-dialog-title" className="modal-title" style={{ fontSize: '1.1rem', margin: 0 }}>
                 {editingId ? 'Edit External Identity Provider' : 'Register Enterprise Identity Provider'}
-              </div>
-              <button className="btn btn-secondary btn-sm" onClick={() => setIsModalOpen(false)}>✕</button>
+              </h2>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                aria-label="Close identity provider dialog"
+                onClick={() => setIsModalOpen(false)}
+              >
+                ✕
+              </button>
             </div>
 
             <form onSubmit={handleSave}>

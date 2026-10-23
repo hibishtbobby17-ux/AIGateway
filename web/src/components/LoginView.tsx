@@ -121,29 +121,38 @@ export const LoginView: React.FC<LoginViewProps> = ({ api, onLoginSuccess }) => 
         </div>
 
         {error && (
-          <div style={{
-            background: 'var(--danger-bg)',
-            border: '1px solid var(--danger-border)',
-            borderRadius: 'var(--radius-sm)',
-            padding: '0.75rem 1rem',
-            marginBottom: '1.5rem',
-            color: '#fecdd3',
-            fontSize: '0.875rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-          }}>
-            <span>⚠️</span>
+          <div
+            role="alert"
+            aria-live="assertive"
+            style={{
+              background: 'var(--danger-bg)',
+              border: '1px solid var(--danger-border)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '0.75rem 1rem',
+              marginBottom: '1.5rem',
+              color: '#fecdd3',
+              fontSize: '0.875rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+            }}
+          >
+            <span aria-hidden="true">⚠️</span>
             <span>{error}</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} noValidate={false}>
           <div className="form-group" style={{ marginBottom: '1.25rem' }}>
-            <label className="form-label" style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+            <label
+              htmlFor="login-username"
+              className="form-label"
+              style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}
+            >
               Username
             </label>
             <input
+              id="login-username"
               type="text"
               required
               className="form-input"
@@ -152,15 +161,21 @@ export const LoginView: React.FC<LoginViewProps> = ({ api, onLoginSuccess }) => 
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               disabled={loading}
+              autoComplete="username"
               autoFocus
             />
           </div>
 
           <div className="form-group" style={{ marginBottom: '1.25rem' }}>
-            <label className="form-label" style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+            <label
+              htmlFor="login-password"
+              className="form-label"
+              style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}
+            >
               Password
             </label>
             <input
+              id="login-password"
               type="password"
               required
               className="form-input"
@@ -169,6 +184,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ api, onLoginSuccess }) => 
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={loading}
+              autoComplete="current-password"
             />
           </div>
 
@@ -176,28 +192,35 @@ export const LoginView: React.FC<LoginViewProps> = ({ api, onLoginSuccess }) => 
             <button
               type="button"
               onClick={() => setShowAdvanced(!showAdvanced)}
+              aria-expanded={showAdvanced}
+              aria-controls="tenant-options-section"
               style={{
                 background: 'none',
                 border: 'none',
                 color: 'var(--text-muted)',
                 fontSize: '0.8125rem',
                 cursor: 'pointer',
-                padding: 0,
+                padding: '0.25rem 0',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '0.25rem',
               }}
             >
-              <span>{showAdvanced ? '▾' : '▸'}</span>
+              <span aria-hidden="true">{showAdvanced ? '▾' : '▸'}</span>
               <span>Tenant Scope Options</span>
             </button>
 
             {showAdvanced && (
-              <div style={{ marginTop: '0.75rem' }}>
-                <label className="form-label" style={{ display: 'block', marginBottom: '0.35rem', fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
+              <div id="tenant-options-section" style={{ marginTop: '0.75rem' }}>
+                <label
+                  htmlFor="login-tenant"
+                  className="form-label"
+                  style={{ display: 'block', marginBottom: '0.35rem', fontSize: '0.8125rem', color: 'var(--text-muted)' }}
+                >
                   Tenant ID (Optional)
                 </label>
                 <input
+                  id="login-tenant"
                   type="text"
                   className="form-input"
                   style={{ width: '100%', fontSize: '0.85rem' }}
@@ -225,10 +248,11 @@ export const LoginView: React.FC<LoginViewProps> = ({ api, onLoginSuccess }) => 
               marginTop: '0.5rem',
             }}
             disabled={loading}
+            aria-busy={loading}
           >
             {loading ? (
               <>
-                <span className="spinner" style={{ width: '16px', height: '16px' }}></span>
+                <span className="spinner" style={{ width: '16px', height: '16px' }} aria-hidden="true" />
                 <span>Authenticating...</span>
               </>
             ) : (

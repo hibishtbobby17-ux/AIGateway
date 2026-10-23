@@ -117,20 +117,25 @@ export const App: React.FC = () => {
 
   if (isCheckingAuth) {
     return (
-      <div style={{
-        minHeight: '100vh',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'var(--bg-base)',
-        color: 'var(--text-secondary)',
-        gap: '1rem',
-      }}>
-        <div className="spinner" style={{ width: '32px', height: '32px' }} />
+      <div
+        role="status"
+        aria-live="polite"
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'var(--bg-base)',
+          color: 'var(--text-secondary)',
+          gap: '1rem',
+        }}
+      >
+        <div className="spinner" style={{ width: '32px', height: '32px' }} aria-hidden="true" />
         <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
           Verifying security session...
         </div>
+        <span className="sr-only">Checking platform authentication session</span>
       </div>
     );
   }
@@ -141,6 +146,10 @@ export const App: React.FC = () => {
 
   return (
     <div className="app-container">
+      <a href="#main-content" className="skip-link">
+        Skip to main content
+      </a>
+
       <Navbar
         activeTab={activeTab}
         onTabChange={(tab) => {
@@ -154,7 +163,7 @@ export const App: React.FC = () => {
         onLogout={handleLogout}
       />
 
-      <main className="main-wrapper">
+      <main className="main-wrapper" id="main-content" tabIndex={-1}>
         {activeTab === 'topology' && (
           <TopologyGraph
             onSelectTrace={handleDeepLinkTrace}
@@ -186,3 +195,4 @@ export const App: React.FC = () => {
 };
 
 export default App;
+
