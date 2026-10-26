@@ -2,7 +2,7 @@
       SELECT id, name, status, revoked_at
       FROM gateway_instances
       WHERE id = $1
-    `,[t.id]);if(0===r.rows.length)return T.NextResponse.json({error:"Gateway instance not found"},{status:404});let o=r.rows[0];if("revoked"===o.status||null!==o.revoked_at)return T.NextResponse.json({error:"Cannot rotate secret for a revoked gateway"},{status:400});let N="gwsec_"+L().randomBytes(24).toString("hex"),A=await n().genSalt(10),d=await n().hash(N,A);return await E.d.query(`
+    `,[t.id]);if(0===r.rows.length)return T.NextResponse.json({error:"Gateway instance not found"},{status:404});let o=r.rows[0];if("revoked"===o.status||null!==o.revoked_at)return T.NextResponse.json({error:"Cannot rotate secret for a revoked gateway"},{status:400});let N="aigw_live_"+L().randomBytes(32).toString("hex"),A=await n().genSalt(10),d=await n().hash(N,A);return await E.d.query(`
       UPDATE gateway_instances
       SET secret_hash = $1, updated_at = NOW()
       WHERE id = $2

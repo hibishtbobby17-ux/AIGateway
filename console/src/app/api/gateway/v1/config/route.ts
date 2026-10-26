@@ -4,24 +4,9 @@ import jwt from 'jsonwebtoken';
 
 import { decryptSecret } from '@/lib/crypto';
 
+import { authenticateGatewayRequest } from '@/lib/gateway-auth';
+
 export const dynamic = 'force-dynamic';
-
-const JWT_SECRET = process.env.CONSOLE_JWT_SECRET || 'dev-console-secret-super-secure-key-32bytes-min';
-
-function verifyGatewayToken(req: NextRequest): { gatewayId: string; gatewayName: string } | null {
-  const authHeader = req.headers.get('authorization');
-  if (!authHeader?.startsWith('Bearer ')) {
-    return null;
-  }
-  const token = authHeader.substring(7);
-  try {
-    const payload = jwt.verify(token, JWT_SECRET) as any;
-    if (payload?.type !== 'gateway') return null;
-    return { gatewayId: payload.gatewayId, gatewayName: payload.gatewayName };
-  } catch {
-    return null;
-  }
-}
 
 async function fetchLatestConfig(gatewayId?: string) {
   await initDatabase();
@@ -174,7 +159,7 @@ async function fetchLatestConfig(gatewayId?: string) {
 
 export async function GET(req: NextRequest) {
   try {
-    const gw = verifyGatewayToken(req);
+    const gw = await authenticateGatewayRequest(req);
     if (!gw) {
       return NextResponse.json({ error: 'Unauthorized gateway' }, { status: 401 });
     }

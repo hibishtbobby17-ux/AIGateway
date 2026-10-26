@@ -108,6 +108,9 @@ func main() {
 
 	port := os.Getenv("GATEWAY_PORT")
 	if port == "" {
+		port = os.Getenv("LISTEN_PORT")
+	}
+	if port == "" {
 		port = "8080"
 	}
 
@@ -116,7 +119,10 @@ func main() {
 		consoleURL = "http://console:3000"
 	}
 
-	gatewaySecret := os.Getenv("GATEWAY_SECRET")
+	gatewaySecret := os.Getenv("AI_GATEWAY_KEY")
+	if gatewaySecret == "" {
+		gatewaySecret = os.Getenv("GATEWAY_SECRET")
+	}
 	if gatewaySecret == "" {
 		gatewaySecret = "dev-gateway-secret"
 	}
@@ -131,9 +137,12 @@ func main() {
 		ingestURL = "http://ingest:8082"
 	}
 
-	configCachePath := os.Getenv("CONFIG_CACHE_PATH")
+	configCachePath := os.Getenv("CACHE_PATH")
 	if configCachePath == "" {
-		configCachePath = "last_good_config.json"
+		configCachePath = os.Getenv("CONFIG_CACHE_PATH")
+	}
+	if configCachePath == "" {
+		configCachePath = "cache.db"
 	}
 
 	maxInFlight := int64(1000)
@@ -205,6 +214,9 @@ func main() {
 
 	// Config Poller (long-poll with ETag and atomic swap)
 	go gw.startConfigPoller(ctx)
+
+	// Real-time SSE Stream listener (push delivery)
+	go gw.startSSEStream(ctx)
 
 	// Heartbeat emitter
 	go gw.startHeartbeatLoop(ctx)
@@ -617,9 +629,9 @@ func (g *Gateway) loadLocalConfig() {
 	if g.logger == nil {
 		g.logger = slog.Default()
 	}
-	data, err := os.ReadFile(g.configPath)
+	data, err := LoadEncryptedConfig(g.configPath, g.gatewaySecret)
 	if err != nil || len(data) == 0 {
-		g.logger.Warn("no local config cache found, bootstrapping minimal fallback", "path", g.configPath)
+		g.logger.Warn("no local config cache found or cache unreadable, bootstrapping minimal fallback", "path", g.configPath)
 		fallback := &GatewayConfig{
 			Version: 1,
 			Projects: map[string]Project{
@@ -645,15 +657,16 @@ func (g *Gateway) loadLocalConfig() {
 	}
 
 	g.currentCfg.Store(&cfg)
-	g.logger.Info("loaded last good configuration from disk", "version", cfg.Version, "projects", len(cfg.Projects))
+	// Log plan-specified warning when booting from local cache
+	g.logger.Warn("Operating in degraded offline cached mode", "version", cfg.Version, "projects", len(cfg.Projects), "path", g.configPath)
 }
 
 func (g *Gateway) saveLocalConfig(cfg *GatewayConfig) error {
-	raw, err := json.MarshalIndent(cfg, "", "  ")
+	raw, err := json.Marshal(cfg)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(g.configPath, raw, 0644)
+	return SaveEncryptedConfig(g.configPath, g.gatewaySecret, raw)
 }
 
 // authenticateWithConsole exchanges GATEWAY_SECRET for a short-lived JWT
@@ -753,6 +766,7 @@ func (g *Gateway) startConfigPoller(ctx context.Context) {
 		}
 
 		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("X-Gateway-ID", g.gatewayID)
 		if currentVersion > 0 {
 			req.Header.Set("If-None-Match", fmt.Sprintf(`"v%d"`, currentVersion))
 		}

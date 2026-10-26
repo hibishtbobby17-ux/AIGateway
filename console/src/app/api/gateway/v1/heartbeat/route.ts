@@ -1,31 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { pool, initDatabase } from '@/db';
-import jwt from 'jsonwebtoken';
+import { authenticateGatewayRequest } from '@/lib/gateway-auth';
 
 export const dynamic = 'force-dynamic';
 
-const JWT_SECRET = process.env.CONSOLE_JWT_SECRET || 'dev-console-secret-super-secure-key-32bytes-min';
-
 export async function POST(req: NextRequest) {
   try {
-    const authHeader = req.headers.get('authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
+    const authGw = await authenticateGatewayRequest(req);
+    if (!authGw) {
       return NextResponse.json({ error: 'Unauthorized gateway' }, { status: 401 });
-    }
-
-    const token = authHeader.substring(7);
-    let payload: any;
-    try {
-      payload = jwt.verify(token, JWT_SECRET);
-    } catch {
-      return NextResponse.json({ error: 'Invalid gateway token' }, { status: 401 });
     }
 
     const body = await req.json();
     const { version, applied_config_version, metrics } = body;
     const protocol = body.protocol || metrics?.protocol || 'http';
     const tlsEnabled = body.tls_enabled ?? metrics?.tls_enabled ?? (protocol === 'https');
-    const gatewayId = payload.gatewayId;
+    const gatewayId = authGw.gatewayId;
 
     await initDatabase();
 

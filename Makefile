@@ -37,6 +37,15 @@ build:
 	go build -trimpath -ldflags="$(LDFLAGS)" -o $(BIN_DIR)/dev-seed ./cmd/dev-seed
 	@echo "Build complete. Executables placed in $(BIN_DIR)/"
 
+## build-all: Cross-compile multi-architecture binaries per architectural specification
+build-all:
+	@echo "Cross-compiling multi-architecture binaries..."
+	@mkdir -p $(BIN_DIR)
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o $(BIN_DIR)/ai-gateway-linux-amd64 ./gateway
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o $(BIN_DIR)/ai-gateway-linux-arm64 ./gateway
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o $(BIN_DIR)/ai-gateway-windows-amd64.exe ./gateway
+	@echo "Multi-arch build complete. Executables placed in $(BIN_DIR)/"
+
 ## test: Run all project tests
 test:
 	@echo "Running all tests..."

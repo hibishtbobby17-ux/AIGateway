@@ -31,8 +31,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ error: 'Cannot rotate secret for a revoked gateway' }, { status: 400 });
     }
 
-    // Generate new secure secret
-    const newRawSecret = 'gwsec_' + crypto.randomBytes(24).toString('hex');
+    // Generate new secure gateway key per architectural plan
+    const newRawSecret = 'aigw_live_' + crypto.randomBytes(32).toString('hex');
     const salt = await bcrypt.genSalt(10);
     const newSecretHash = await bcrypt.hash(newRawSecret, salt);
 

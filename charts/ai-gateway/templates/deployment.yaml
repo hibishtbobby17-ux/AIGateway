@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ai-gateway.fullname" . }}
+  labels:
+    {{- include "ai-gateway.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "ai-gateway.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ai-gateway.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "ai-gateway.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      nodeSelector:
+        {{- toYaml .Values.nodeSelector | nindent 8 }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: gateway
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.gateway.listenPort }}
+              protocol: TCP
+          env:
+            - name: CONSOLE_URL
+              value: {{ .Values.gateway.consoleUrl | quote }}
+            - name: LISTEN_PORT
+              value: {{ .Values.gateway.listenPort | quote }}
+            - name: CACHE_PATH
+              value: {{ .Values.gateway.cachePath | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.gateway.logLevel | default "info" | quote }}
+            - name: AI_GATEWAY_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ ternary (include "ai-gateway.fullname" .) .Values.auth.existingSecret.name (empty .Values.auth.existingSecret.name) }}
+                  key: {{ ternary "AI_GATEWAY_KEY" .Values.auth.existingSecret.keyName (empty .Values.auth.existingSecret.keyName) }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          volumeMounts:
+            - name: cache-vol
+              mountPath: /var/lib/ai-gateway
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: cache-vol
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "ai-gateway.fullname" . }}-cache
+          {{- else }}
+          emptyDir: {}
+          {{- end }}

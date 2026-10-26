@@ -141,6 +141,7 @@ export default function ConsoleDashboard() {
   const [bindingSelectedMode, setBindingSelectedMode] = useState<'global' | 'targeted'>('global');
   const [bindingSelectedProjectIds, setBindingSelectedProjectIds] = useState<string[]>([]);
   const [bindingSaving, setBindingSaving] = useState<boolean>(false);
+  const [deploySnippetTab, setDeploySnippetTab] = useState<'helm' | 'docker' | 'linux' | 'windows'>('helm');
 
   useEffect(() => {
     checkAuth();
@@ -362,6 +363,92 @@ export default function ConsoleDashboard() {
     setTimeout(() => setCopiedKey(null), 2500);
     showBanner('Copied to clipboard!', 'success');
   };
+
+  const renderDeploySnippets = (secret: string) => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+    const consoleUrl = `${origin}/api/v1`;
+
+    const snippets: Record<'helm' | 'docker' | 'linux' | 'windows', string> = {
+      helm: `helm install ai-gateway ./charts/ai-gateway \\\n  --set auth.key="${secret}" \\\n  --set gateway.consoleUrl="${consoleUrl}"`,
+      docker: `docker run -d --name ai-gateway \\\n  -p 8080:8080 \\\n  -e AI_GATEWAY_KEY="${secret}" \\\n  -e CONSOLE_URL="${consoleUrl}" \\\n  ghcr.io/my-org/ai-gateway:1.0.0`,
+      linux: `AI_GATEWAY_KEY="${secret}" \\\nCONSOLE_URL="${consoleUrl}" \\\nsudo ./deployments/standalone/install-linux.sh`,
+      windows: `powershell -ExecutionPolicy Bypass -File .\\deployments\\standalone\\install-windows.ps1 \`\n  -GatewayKey "${secret}" \`\n  -ConsoleUrl "${consoleUrl}"`
+    };
+
+    const currentCode = snippets[deploySnippetTab];
+
+    return (
+      <div style={{ marginTop: '20px', borderTop: '1px solid var(--border-subtle)', paddingTop: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+          <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-main)' }}>
+            🚀 Quickstart Deployment Snippets
+          </span>
+          <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-surface-subtle)', padding: '3px', borderRadius: 'var(--radius-sm)' }}>
+            {(['helm', 'docker', 'linux', 'windows'] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setDeploySnippetTab(tab)}
+                style={{
+                  fontSize: '0.72rem',
+                  fontWeight: 600,
+                  textTransform: 'uppercase',
+                  padding: '4px 10px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: 'none',
+                  cursor: 'pointer',
+                  background: deploySnippetTab === tab ? 'var(--primary)' : 'transparent',
+                  color: deploySnippetTab === tab ? '#ffffff' : 'var(--text-muted)',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ position: 'relative' }}>
+          <pre style={{
+            background: '#090d16',
+            color: '#e2e8f0',
+            fontSize: '0.78rem',
+            fontFamily: 'monospace',
+            padding: '14px',
+            paddingRight: '70px',
+            borderRadius: 'var(--radius-md)',
+            overflowX: 'auto',
+            margin: 0,
+            lineHeight: 1.5,
+            border: '1px solid #1e293b'
+          }}>
+            {currentCode}
+          </pre>
+          <button
+            type="button"
+            onClick={() => {
+              navigator.clipboard.writeText(currentCode);
+              showBanner(`${deploySnippetTab.toUpperCase()} deployment command copied!`, 'success');
+            }}
+            className="btn-secondary"
+            style={{
+              position: 'absolute',
+              top: '8px',
+              right: '8px',
+              fontSize: '0.72rem',
+              padding: '4px 8px',
+              background: 'rgba(255, 255, 255, 0.12)',
+              borderColor: 'rgba(255, 255, 255, 0.25)',
+              color: '#f8fafc'
+            }}
+          >
+            📋 Copy
+          </button>
+        </div>
+      </div>
+    );
+  };
+
 
   const loadAuditLogs = async () => {
     setAuditLoading(true);
@@ -2178,7 +2265,7 @@ export default function ConsoleDashboard() {
           zIndex: 1000,
           padding: '20px'
         }}>
-          <div className="glass-panel" style={{ width: '100%', maxWidth: '500px', padding: '32px' }}>
+          <div className="glass-panel" style={{ width: '100%', maxWidth: '680px', maxHeight: '90vh', overflowY: 'auto', padding: '32px' }}>
             <h3 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '8px' }}>
               Register Gateway Instance
             </h3>
@@ -2188,19 +2275,37 @@ export default function ConsoleDashboard() {
 
             {generatedSecret ? (
               <div>
-                <div style={{ background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.4)', borderRadius: '8px', padding: '16px', marginBottom: '20px' }}>
-                  <span style={{ fontSize: '0.8rem', color: '#34d399', fontWeight: 600, display: 'block', marginBottom: '6px' }}>
-                    GATEWAY SECRET GENERATED:
-                  </span>
-                  <code style={{ fontSize: '0.95rem', color: '#ffffff', wordBreak: 'break-all', display: 'block', background: 'var(--bg-surface-subtle)', padding: '10px', borderRadius: '6px' }}>
-                    {generatedSecret}
-                  </code>
-                  <span style={{ fontSize: '0.75rem', color: '#fda4af', display: 'block', marginTop: '8px' }}>
-                    ⚠️ Copy this secret now. It will never be displayed again.
+                <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px' }}>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--danger)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    ⚠️ Store this key in your secrets manager. It will not be shown again.
                   </span>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <div style={{ background: 'var(--bg-surface-subtle)', border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '14px 16px', marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                  <div style={{ overflow: 'hidden' }}>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
+                      Cryptographic Gateway Key
+                    </span>
+                    <code style={{ fontSize: '0.9rem', color: 'var(--primary-text)', fontWeight: 600, wordBreak: 'break-all' }}>
+                      {generatedSecret}
+                    </code>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(generatedSecret);
+                      showBanner('Gateway key copied to clipboard!', 'success');
+                    }}
+                    className="btn-secondary"
+                    style={{ fontSize: '0.78rem', padding: '6px 12px', whiteSpace: 'nowrap', flexShrink: 0 }}
+                  >
+                    📋 Copy Key
+                  </button>
+                </div>
+
+                {renderDeploySnippets(generatedSecret)}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px' }}>
                   <button
                     onClick={() => {
                       setShowNewGatewayModal(false);
@@ -2265,7 +2370,7 @@ export default function ConsoleDashboard() {
           zIndex: 1000,
           padding: '20px'
         }}>
-          <div className="glass-panel" style={{ width: '100%', maxWidth: '520px', padding: '32px' }}>
+          <div className="glass-panel" style={{ width: '100%', maxWidth: '680px', maxHeight: '90vh', overflowY: 'auto', padding: '32px' }}>
             <h3 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '8px' }}>
               🔑 Gateway Secret Rotated
             </h3>
@@ -2273,27 +2378,37 @@ export default function ConsoleDashboard() {
               The secret for gateway <strong>{rotatedSecretModal.gatewayName}</strong> has been regenerated.
             </p>
 
-            <div style={{ background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.3)', padding: '12px', borderRadius: '8px', marginBottom: '16px', color: '#fda4af', fontSize: '0.8rem' }}>
-              ⚠️ <strong>Save this secret immediately.</strong> It will NEVER be shown again in the console or logs.
+            <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.25)', padding: '12px 16px', borderRadius: '8px', marginBottom: '16px' }}>
+              <span style={{ fontSize: '0.8rem', color: 'var(--danger)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                ⚠️ Store this key in your secrets manager. It will not be shown again. Connected instances must be updated immediately.
+              </span>
             </div>
 
-            <div style={{ background: 'var(--bg-surface-subtle)', padding: '14px', borderRadius: '8px', marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <code style={{ fontSize: '0.95rem', color: 'var(--accent-cyan)', wordBreak: 'break-all' }}>
-                {rotatedSecretModal.secret}
-              </code>
+            <div style={{ background: 'var(--bg-surface-subtle)', border: '1px solid var(--border-subtle)', padding: '14px 16px', borderRadius: '8px', marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+              <div style={{ overflow: 'hidden' }}>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
+                  New Gateway Key
+                </span>
+                <code style={{ fontSize: '0.9rem', color: 'var(--primary-text)', fontWeight: 600, wordBreak: 'break-all' }}>
+                  {rotatedSecretModal.secret}
+                </code>
+              </div>
               <button
+                type="button"
                 onClick={() => {
                   navigator.clipboard.writeText(rotatedSecretModal.secret);
                   showBanner('Secret copied to clipboard!', 'success');
                 }}
                 className="btn-secondary"
-                style={{ fontSize: '0.78rem', padding: '4px 8px', marginLeft: '12px', whiteSpace: 'nowrap' }}
+                style={{ fontSize: '0.78rem', padding: '6px 12px', whiteSpace: 'nowrap', flexShrink: 0 }}
               >
-                📋 Copy
+                📋 Copy Key
               </button>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            {renderDeploySnippets(rotatedSecretModal.secret)}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px' }}>
               <button
                 onClick={() => setRotatedSecretModal(null)}
                 className="btn-primary"

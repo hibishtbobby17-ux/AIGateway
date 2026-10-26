@@ -103,8 +103,8 @@ export async function POST(req: NextRequest) {
 
     await initDatabase();
 
-    // Generate random secure secret
-    const rawSecret = 'gwsec_' + crypto.randomBytes(24).toString('hex');
+    // Generate random secure gateway key per architectural plan
+    const rawSecret = 'aigw_live_' + crypto.randomBytes(32).toString('hex');
     const salt = await bcrypt.genSalt(10);
     const secretHash = await bcrypt.hash(rawSecret, salt);
 

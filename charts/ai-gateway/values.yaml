@@ -1,0 +1,77 @@
+# Default values for ai-gateway.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 2
+
+image:
+  repository: ghcr.io/my-org/ai-gateway
+  pullPolicy: IfNotPresent
+  tag: "1.0.0"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext: {}
+
+securityContext: {}
+
+gateway:
+  consoleUrl: "https://console.company.internal/api/v1"
+  listenPort: 8080
+  logLevel: "info"
+  cachePath: "/var/lib/ai-gateway/cache.db"
+
+auth:
+  # Option 1: Direct key injection (creates Kubernetes Secret)
+  key: "aigw_live_default_key_placeholder"
+  # Option 2: Pre-existing secret created by external vault / CI
+  existingSecret:
+    name: ""
+    keyName: "AI_GATEWAY_KEY"
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: ai-gateway.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# Target OS Selection: "linux" or "windows"
+nodeSelector:
+  kubernetes.io/os: linux
+
+tolerations: []
+
+affinity: {}
+
+persistence:
+  enabled: true
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 1Gi
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 100m
+    memory: 256Mi
