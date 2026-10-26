@@ -1,6 +1,10 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import InboundEndpointsView from './components/InboundEndpointsView';
+import ProjectPoliciesView from './components/ProjectPoliciesView';
+import CertificatesSettingsView from './components/CertificatesSettingsView';
+import OAuthSecretsView from './components/OAuthSecretsView';
 
 interface User {
   userId: string;
@@ -25,6 +29,7 @@ interface Project {
   settings: Record<string, any>;
   config_version: number;
   server_count?: number;
+  servers?: any[];
   created_at: string;
 }
 
@@ -130,6 +135,12 @@ export default function ConsoleDashboard() {
 
   // Rotated Secret Modal State
   const [rotatedSecretModal, setRotatedSecretModal] = useState<{ gatewayName: string; secret: string } | null>(null);
+
+  // Gateway Project Bindings Modal State
+  const [bindingGateway, setBindingGateway] = useState<any | null>(null);
+  const [bindingSelectedMode, setBindingSelectedMode] = useState<'global' | 'targeted'>('global');
+  const [bindingSelectedProjectIds, setBindingSelectedProjectIds] = useState<string[]>([]);
+  const [bindingSaving, setBindingSaving] = useState<boolean>(false);
 
   useEffect(() => {
     checkAuth();
@@ -246,6 +257,38 @@ export default function ConsoleDashboard() {
     }
   };
 
+  const openManageBindings = (gw: any) => {
+    setBindingGateway(gw);
+    const hasBindings = gw.bound_projects && gw.bound_projects.length > 0;
+    setBindingSelectedMode(hasBindings ? 'targeted' : 'global');
+    setBindingSelectedProjectIds(hasBindings ? gw.bound_projects.map((p: any) => p.id) : []);
+  };
+
+  const handleSaveBindings = async () => {
+    if (!bindingGateway) return;
+    setBindingSaving(true);
+    try {
+      const boundIds = bindingSelectedMode === 'global' ? [] : bindingSelectedProjectIds;
+      const res = await fetch(`/api/gateways/${bindingGateway.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bound_project_ids: boundIds })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showBanner(`Updated project mappings for gateway "${bindingGateway.name}"!`, 'success');
+        setBindingGateway(null);
+        await loadGateways();
+      } else {
+        showBanner(data.error || 'Failed to update gateway bindings', 'error');
+      }
+    } catch (err: any) {
+      showBanner(err.message, 'error');
+    } finally {
+      setBindingSaving(false);
+    }
+  };
+
   const handleInspectGateway = async (gatewayId: string) => {
     setInspectingGatewayId(gatewayId);
     setInspectionLoading(true);
@@ -253,6 +296,40 @@ export default function ConsoleDashboard() {
     setInspectSearchQuery('');
     setInspectSelectedProjectId('');
     setInspectProtocolFilter('all');
+
+    // Pre-populate with local gateway details immediately so user sees rich feedback instantly
+    const localGw = gatewaysList.find((g) => g.id === gatewayId || g.name === gatewayId);
+    if (localGw) {
+      setInspectingGatewayData({
+        gateway: localGw,
+        endpoints: (localGw.bound_projects && localGw.bound_projects.length > 0)
+          ? localGw.bound_projects.map((bp: any) => ({
+              project_id: bp.id,
+              project_name: bp.name,
+              slug: bp.slug,
+              endpoint_path: bp.endpoint_path || `/p/${bp.slug}/mcp`,
+              endpoint_url: bp.endpoint_url || `http://localhost:8080/p/${bp.slug}/mcp`,
+              status: bp.status || 'active',
+              inbound_auth: { mode: 'none' },
+              rate_limits: { requests_per_minute: 600, burst: 50 },
+              circuit_breaker: { max_failures: 5, recovery_seconds: 30 },
+              downstream_servers: []
+            }))
+          : projects.map((p) => ({
+              project_id: p.id,
+              project_name: p.name,
+              slug: p.slug,
+              endpoint_path: `/p/${p.slug}/mcp`,
+              endpoint_url: `${localGw.base_url || 'http://localhost:8080'}/p/${p.slug}/mcp`,
+              status: p.status || 'active',
+              inbound_auth: p.settings?.inbound_auth || { mode: 'none' },
+              rate_limits: p.settings?.rate_limits || { requests_per_minute: 600, burst: 50 },
+              circuit_breaker: p.settings?.circuit_breaker || { max_failures: 5, recovery_seconds: 30 },
+              downstream_servers: p.servers || []
+            }))
+      });
+    }
+
     try {
       const res = await fetch(`/api/gateways/${gatewayId}`);
       if (res.ok) {
@@ -260,12 +337,20 @@ export default function ConsoleDashboard() {
         setInspectingGatewayData(data);
       } else {
         const errData = await res.json().catch(() => ({}));
-        showBanner(errData.error || 'Failed to inspect gateway', 'error');
-        setInspectingGatewayId(null);
+        if (localGw) {
+          showBanner(errData.error ? `Displaying cached fleet profile (${errData.error})` : 'Showing cached gateway profile', 'info');
+        } else {
+          showBanner(errData.error || 'Failed to inspect gateway', 'error');
+          setInspectingGatewayId(null);
+        }
       }
     } catch (err: any) {
-      showBanner(err.message, 'error');
-      setInspectingGatewayId(null);
+      if (localGw) {
+        showBanner(`Displaying cached fleet profile: ${err.message}`, 'info');
+      } else {
+        showBanner(err.message, 'error');
+        setInspectingGatewayId(null);
+      }
     } finally {
       setInspectionLoading(false);
     }
@@ -723,8 +808,7 @@ export default function ConsoleDashboard() {
 
       {/* Top Navbar */}
       <header style={{
-        background: 'rgba(15, 23, 42, 0.85)',
-        backdropFilter: 'blur(16px)',
+        background: 'var(--bg-surface)',
         borderBottom: '1px solid var(--border-subtle)',
         padding: '14px 28px',
         display: 'flex',
@@ -732,18 +816,19 @@ export default function ConsoleDashboard() {
         justifyContent: 'space-between',
         position: 'sticky',
         top: 0,
-        zIndex: 100
+        zIndex: 100,
+        boxShadow: 'var(--card-shadow)'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
           <div style={{
             width: '36px',
             height: '36px',
-            borderRadius: '9px',
-            background: 'linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%)',
+            borderRadius: 'var(--radius-sm)',
+            background: 'var(--primary)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            boxShadow: '0 4px 12px rgba(99, 102, 241, 0.4)'
+            boxShadow: '0 2px 8px rgba(79, 70, 229, 0.35)'
           }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
@@ -754,12 +839,12 @@ export default function ConsoleDashboard() {
           </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span className="brand-font" style={{ fontWeight: 700, fontSize: '1.15rem' }}>AI CONSOLE</span>
+              <span className="brand-font" style={{ fontWeight: 700, fontSize: '1.15rem', color: 'var(--text-main)' }}>AI CONSOLE</span>
               <span className="badge badge-cyan" style={{ fontSize: '0.65rem' }}>Control Plane</span>
               <span className="badge badge-emerald" style={{ fontSize: '0.65rem' }}>Phase 2 Ready</span>
             </div>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
-              Org: <strong style={{ color: 'var(--text-muted)' }}>{org?.name || 'Default Enterprise'}</strong>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              Org: <strong style={{ color: 'var(--text-main)' }}>{org?.name || 'Default Enterprise'}</strong>
             </span>
           </div>
         </div>
@@ -767,9 +852,9 @@ export default function ConsoleDashboard() {
         {/* User Info & Actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <div style={{
-            background: 'rgba(255, 255, 255, 0.05)',
+            background: 'var(--bg-surface-subtle)',
             border: '1px solid var(--border-subtle)',
-            borderRadius: '9999px',
+            borderRadius: 'var(--radius-pill)',
             padding: '4px 12px 4px 6px',
             display: 'flex',
             alignItems: 'center',
@@ -779,7 +864,8 @@ export default function ConsoleDashboard() {
               width: '24px',
               height: '24px',
               borderRadius: '50%',
-              background: '#4f46e5',
+              background: 'var(--primary)',
+              color: 'var(--text-inverse)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -804,17 +890,20 @@ export default function ConsoleDashboard() {
         <nav style={{
           width: '240px',
           borderRight: '1px solid var(--border-subtle)',
-          background: 'rgba(11, 17, 32, 0.6)',
+          background: 'var(--bg-surface)',
           padding: '24px 16px',
           display: 'flex',
           flexDirection: 'column',
-          gap: '6px'
+          gap: '4px'
         }}>
           {[
             { id: 'projects', label: 'Projects & Virtual MCP', icon: '📁' },
+            { id: 'inbound-endpoints', label: 'Inbound & MCP Endpoints', icon: '🌐' },
+            { id: 'gateways', label: 'Gateway Fleet', icon: '⚡' },
+            { id: 'policies', label: 'Project Policies', icon: '🛡️' },
+            { id: 'certificates', label: 'Certificates & Security Hub', icon: '🔒' },
             { id: 'mcp-servers', label: 'Downstream MCPs', icon: '🔌' },
-            { id: 'gateways', label: 'Gateway Fleet', icon: '🌐' },
-            { id: 'oauth', label: 'OAuth & Secrets', icon: '🛡️' },
+            { id: 'oauth', label: 'OAuth & Secrets', icon: '🔑' },
             { id: 'logs', label: 'Logs & Telemetry', icon: '📊' },
             { id: 'audit', label: 'Audit Trail', icon: '📜' },
           ].map((item) => (
@@ -825,12 +914,12 @@ export default function ConsoleDashboard() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '10px',
-                padding: '10px 14px',
-                borderRadius: '8px',
-                border: 'none',
-                background: activeTab === item.id ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
-                color: activeTab === item.id ? '#a5b4fc' : 'var(--text-muted)',
-                fontWeight: activeTab === item.id ? 600 : 400,
+                padding: '9px 12px',
+                borderRadius: 'var(--radius-sm)',
+                border: activeTab === item.id ? '1px solid var(--border-strong)' : '1px solid transparent',
+                background: activeTab === item.id ? 'var(--primary-subtle)' : 'transparent',
+                color: activeTab === item.id ? 'var(--primary-text)' : 'var(--text-muted)',
+                fontWeight: activeTab === item.id ? 600 : 500,
                 cursor: 'pointer',
                 textAlign: 'left',
                 width: '100%',
@@ -844,7 +933,7 @@ export default function ConsoleDashboard() {
         </nav>
 
         {/* Content Body */}
-        <main style={{ flex: 1, padding: '32px 36px', overflowY: 'auto' }}>
+        <main style={{ flex: 1, padding: '32px 36px', overflowY: 'auto', background: 'var(--bg-page)' }}>
           {/* TAB 1: PROJECTS */}
           {activeTab === 'projects' && (
             <div>
@@ -875,14 +964,14 @@ export default function ConsoleDashboard() {
                     boxShadow: selectedProjectId === proj.id ? '0 0 20px rgba(99, 102, 241, 0.25)' : undefined,
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                      <h3 style={{ fontSize: '1.2rem', fontWeight: 600, color: '#f8fafc' }}>{proj.name}</h3>
+                      <h3 style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-main)' }}>{proj.name}</h3>
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <span className="badge badge-cyan">v{proj.config_version}</span>
                         <span className="badge badge-emerald">{proj.status}</span>
                       </div>
                     </div>
 
-                    <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: '8px', marginBottom: '16px' }}>
+                    <div style={{ background: 'var(--bg-surface)', padding: '10px 14px', borderRadius: '8px', marginBottom: '16px' }}>
                       <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '4px' }}>
                         Virtual MCP Endpoint:
                       </div>
@@ -925,9 +1014,9 @@ export default function ConsoleDashboard() {
                     value={selectedProjectId}
                     onChange={(e) => setSelectedProjectId(e.target.value)}
                     style={{
-                      background: 'rgba(15, 23, 42, 0.9)',
+                      background: 'var(--bg-surface)',
                       border: '1px solid var(--border-subtle)',
-                      color: '#f8fafc',
+                      color: 'var(--text-main)',
                       padding: '8px 12px',
                       borderRadius: '8px',
                       fontSize: '0.9rem',
@@ -955,7 +1044,7 @@ export default function ConsoleDashboard() {
 
               {/* Server Cards */}
               <div style={{ marginBottom: '32px' }}>
-                <h3 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#f8fafc', marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '16px' }}>
                   Downstream MCP Servers ({servers.length})
                 </h3>
 
@@ -993,7 +1082,7 @@ export default function ConsoleDashboard() {
                       <div key={srv.id} className="glass-panel" style={{ padding: '24px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
                           <div>
-                            <h4 style={{ fontSize: '1.15rem', fontWeight: 600, color: '#f8fafc' }}>{srv.name}</h4>
+                            <h4 style={{ fontSize: '1.15rem', fontWeight: 600, color: 'var(--text-main)' }}>{srv.name}</h4>
                             <span style={{ fontSize: '0.78rem', color: 'var(--text-dim)' }}>
                               Prefix: <code style={{ color: 'var(--accent-cyan)' }}>{srv.namespace_prefix}__</code>
                             </span>
@@ -1006,7 +1095,7 @@ export default function ConsoleDashboard() {
                           </div>
                         </div>
 
-                        <div style={{ background: 'rgba(0,0,0,0.3)', padding: '8px 12px', borderRadius: '6px', marginBottom: '16px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div style={{ background: 'var(--bg-surface)', padding: '8px 12px', borderRadius: '6px', marginBottom: '16px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           <code style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{srv.url}</code>
                         </div>
 
@@ -1077,7 +1166,7 @@ export default function ConsoleDashboard() {
                 <div className="glass-panel" style={{ padding: '28px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
                     <div>
-                      <h3 style={{ fontSize: '1.3rem', fontWeight: 700, color: '#f8fafc', marginBottom: '4px' }}>
+                      <h3 style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '4px' }}>
                         Discovered Tools Catalog ({discoveredTools.length})
                       </h3>
                       <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
@@ -1096,7 +1185,7 @@ export default function ConsoleDashboard() {
                         alignItems: 'center',
                         justifyContent: 'space-between',
                         padding: '16px 20px',
-                        background: 'rgba(255, 255, 255, 0.02)',
+                        background: 'var(--bg-surface-subtle)',
                         border: '1px solid var(--border-subtle)',
                         borderRadius: '10px'
                       }}>
@@ -1178,7 +1267,7 @@ export default function ConsoleDashboard() {
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <div className="pulse-dot" style={{ backgroundColor: gw.status === 'active' ? '#10b981' : '#f59e0b' }}></div>
-                        <h3 style={{ fontSize: '1.15rem', fontWeight: 600, color: '#f8fafc' }}>{gw.name}</h3>
+                        <h3 style={{ fontSize: '1.15rem', fontWeight: 600, color: 'var(--text-main)' }}>{gw.name}</h3>
                       </div>
                       <span className={`badge ${gw.status === 'active' ? 'badge-emerald' : gw.status === 'revoked' ? 'badge-rose' : 'badge-indigo'}`}>
                         {gw.status.toUpperCase()}
@@ -1209,23 +1298,37 @@ export default function ConsoleDashboard() {
                     </div>
 
                     {/* Assigned Endpoints & Active Rules Representation */}
-                    <div style={{ background: 'rgba(0, 0, 0, 0.35)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-subtle)', marginBottom: '16px' }}>
+                    {/* Assigned Endpoints & Active Rules Representation */}
+                    <div style={{ background: 'var(--bg-surface-subtle)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-subtle)', marginBottom: '16px' }}>
                       <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span>Hosted Endpoints &amp; Rules</span>
-                        <span className="badge badge-indigo" style={{ fontSize: '0.68rem', padding: '1px 6px' }}>
-                          {gw.bound_projects?.length || 0} Targeted
-                        </span>
+                        <span>Hosted Endpoints &amp; Mappings</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span className={`badge ${gw.bound_projects?.length ? 'badge-indigo' : 'badge-cyan'}`} style={{ fontSize: '0.68rem', padding: '1px 6px' }}>
+                            {gw.bound_projects?.length ? `🎯 ${gw.bound_projects.length} Targeted` : `🌐 Global (${projects.length})`}
+                          </span>
+                          <button
+                            onClick={() => openManageBindings(gw)}
+                            className="btn-secondary"
+                            style={{ fontSize: '0.7rem', padding: '2px 7px', color: 'var(--accent-cyan)', background: 'rgba(6, 182, 212, 0.12)' }}
+                            title="Map or unmap projects to this gateway"
+                          >
+                            🔗 Map Projects
+                          </button>
+                        </div>
                       </div>
 
                       {gw.bound_projects && gw.bound_projects.length > 0 ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <div style={{ fontSize: '0.73rem', color: '#818cf8', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
+                            <span>🎯 Targeted Scope (Strictly isolated to {gw.bound_projects.length} project{gw.bound_projects.length > 1 ? 's' : ''}):</span>
+                          </div>
                           {gw.bound_projects.slice(0, 3).map((bp: any) => (
-                            <div key={bp.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.8rem', background: 'rgba(255, 255, 255, 0.03)', padding: '6px 8px', borderRadius: '4px' }}>
+                            <div key={bp.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.8rem', background: 'var(--bg-surface-subtle)', padding: '6px 8px', borderRadius: '4px' }}>
                               <div style={{ overflow: 'hidden' }}>
                                 <div style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '0.82rem', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{bp.name}</div>
                                 <code style={{ fontSize: '0.72rem', color: 'var(--accent-cyan)' }}>{bp.endpoint_url || `/p/${bp.slug}/mcp`}</code>
                               </div>
-                              <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', background: 'rgba(255, 255, 255, 0.05)', padding: '2px 6px', borderRadius: '4px', whiteSpace: 'nowrap', marginLeft: '6px' }}>
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', background: 'var(--bg-surface-subtle)', padding: '2px 6px', borderRadius: '4px', whiteSpace: 'nowrap', marginLeft: '6px' }}>
                                 {bp.server_count || 0} upstreams
                               </span>
                             </div>
@@ -1244,13 +1347,49 @@ export default function ConsoleDashboard() {
                                 textDecoration: 'underline'
                               }}
                             >
-                              + {gw.bound_projects.length - 3} more mapped projects (click to inspect all ➔)
+                              + {gw.bound_projects.length - 3} more targeted projects (click to inspect all ➔)
                             </button>
                           )}
                         </div>
                       ) : (
-                        <div style={{ fontSize: '0.78rem', color: 'var(--text-dim)', fontStyle: 'italic' }}>
-                          Global Mode: Serving all active project endpoints and fallback policies
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <div style={{ fontSize: '0.73rem', color: 'var(--accent-cyan)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px' }}>
+                            <span>🌐 Global Mode: Serving all {projects.length} org project(s)</span>
+                            <span style={{ fontSize: '0.68rem', color: 'var(--text-dim)' }}>Broadcasting</span>
+                          </div>
+                          {projects.slice(0, 3).map((p: any) => (
+                            <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.8rem', background: 'var(--bg-surface-subtle)', padding: '5px 8px', borderRadius: '4px' }}>
+                              <div style={{ overflow: 'hidden' }}>
+                                <div style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '0.82rem', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{p.name}</div>
+                                <code style={{ fontSize: '0.72rem', color: 'var(--accent-cyan)' }}>/p/{p.slug}/mcp</code>
+                              </div>
+                              <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)', background: 'var(--bg-surface-subtle)', padding: '2px 6px', borderRadius: '4px', whiteSpace: 'nowrap', marginLeft: '6px' }}>
+                                {p.servers?.length ?? p.server_count ?? 0} upstreams
+                              </span>
+                            </div>
+                          ))}
+                          {projects.length > 3 && (
+                            <button
+                              onClick={() => handleInspectGateway(gw.id)}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'var(--accent-cyan)',
+                                fontSize: '0.74rem',
+                                cursor: 'pointer',
+                                textAlign: 'left',
+                                padding: '4px 2px',
+                                textDecoration: 'underline'
+                              }}
+                            >
+                              + {projects.length - 3} more mapped projects (click to inspect all ➔)
+                            </button>
+                          )}
+                          {projects.length === 0 && (
+                            <div style={{ fontSize: '0.78rem', color: 'var(--text-dim)', fontStyle: 'italic' }}>
+                              No active projects created yet in organization.
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1259,7 +1398,7 @@ export default function ConsoleDashboard() {
                       <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
                         Protocol: {gw.protocol?.toUpperCase() || 'HTTP'} Polling
                       </span>
-                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                         <button
                           id={`inspect-gw-${gw.id}`}
                           onClick={() => handleInspectGateway(gw.id)}
@@ -1276,6 +1415,43 @@ export default function ConsoleDashboard() {
                         >
                           <span>🔍</span> Inspect Details
                         </button>
+
+                        <button
+                          onClick={() => openManageBindings(gw)}
+                          className="btn-secondary"
+                          style={{ fontSize: '0.75rem', padding: '4px 8px', color: '#c7d2fe' }}
+                          title="Manage project bindings for this gateway"
+                        >
+                          🔗 Bindings
+                        </button>
+
+                        <button
+                          onClick={() => setActiveTab('inbound-endpoints')}
+                          className="btn-secondary"
+                          style={{ fontSize: '0.75rem', padding: '4px 8px', color: 'var(--accent-cyan)' }}
+                          title="View all inbound endpoints and MCPs for this gateway"
+                        >
+                          🌐 Endpoints ➔
+                        </button>
+
+                        <button
+                          onClick={() => setActiveTab('policies')}
+                          className="btn-secondary"
+                          style={{ fontSize: '0.75rem', padding: '4px 8px', color: '#10b981' }}
+                          title="Configure & enforce project policies"
+                        >
+                          🛡️ Policies
+                        </button>
+
+                        <button
+                          onClick={() => setActiveTab('certificates')}
+                          className="btn-secondary"
+                          style={{ fontSize: '0.75rem', padding: '4px 8px', color: '#f59e0b' }}
+                          title="Configure TLS certificates and settings"
+                        >
+                          🔒 TLS / Certs
+                        </button>
+
                         {gw.status !== 'revoked' && (
                           <>
                             <button
@@ -1359,7 +1535,7 @@ export default function ConsoleDashboard() {
                   <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Total Ingested Events
                   </span>
-                  <div style={{ fontSize: '1.6rem', fontWeight: 700, color: '#f8fafc', marginTop: '4px' }}>
+                  <div style={{ fontSize: '1.6rem', fontWeight: 700, color: 'var(--text-main)', marginTop: '4px' }}>
                     {logsTotal}
                   </div>
                 </div>
@@ -1452,7 +1628,7 @@ export default function ConsoleDashboard() {
               <div className="glass-panel" style={{ overflow: 'hidden' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
                   <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border-subtle)', background: 'rgba(255, 255, 255, 0.02)' }}>
+                    <tr style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-surface-subtle)' }}>
                       <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Timestamp</th>
                       <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Status</th>
                       <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Project</th>
@@ -1482,7 +1658,7 @@ export default function ConsoleDashboard() {
                             <tr
                               onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
                               style={{
-                                borderBottom: '1px solid rgba(255, 255, 255, 0.04)',
+                                borderBottom: '1px solid var(--border-subtle)',
                                 cursor: 'pointer',
                                 background: isExpanded ? 'rgba(99, 102, 241, 0.08)' : 'transparent',
                                 transition: 'background 0.15s ease',
@@ -1496,7 +1672,7 @@ export default function ConsoleDashboard() {
                                   {log.status}
                                 </span>
                               </td>
-                              <td style={{ padding: '12px 16px', color: '#f8fafc', fontWeight: 500 }}>
+                              <td style={{ padding: '12px 16px', color: 'var(--text-main)', fontWeight: 500 }}>
                                 {log.project}
                               </td>
                               <td style={{ padding: '12px 16px', color: 'var(--text-muted)' }}>
@@ -1505,7 +1681,7 @@ export default function ConsoleDashboard() {
                               <td style={{ padding: '12px 16px', color: log.tool ? 'var(--accent-cyan)' : 'var(--text-dim)' }}>
                                 {log.tool || 'initialize / list'}
                               </td>
-                              <td style={{ padding: '12px 16px', color: '#f8fafc', fontFamily: 'monospace' }}>
+                              <td style={{ padding: '12px 16px', color: 'var(--text-main)', fontFamily: 'monospace' }}>
                                 {parseFloat(log.latency_ms || 0).toFixed(2)} ms
                               </td>
                               <td style={{ padding: '12px 16px', color: 'var(--text-dim)', fontFamily: 'monospace', fontSize: '0.78rem' }}>
@@ -1519,7 +1695,7 @@ export default function ConsoleDashboard() {
                             </tr>
 
                             {isExpanded && (
-                              <tr style={{ background: 'rgba(15, 23, 42, 0.6)', borderBottom: '1px solid var(--border-subtle)' }}>
+                              <tr style={{ background: 'var(--bg-surface-subtle)', borderBottom: '1px solid var(--border-subtle)' }}>
                                 <td colSpan={8} style={{ padding: '16px 24px' }}>
                                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
                                     <div>
@@ -1549,7 +1725,7 @@ export default function ConsoleDashboard() {
                                     {log.attributes && Object.keys(log.attributes).length > 0 && (
                                       <div style={{ gridColumn: '1 / -1' }}>
                                         <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginBottom: '4px' }}>ATTRIBUTES</div>
-                                        <pre style={{ background: 'rgba(0,0,0,0.4)', padding: '10px', borderRadius: '6px', fontSize: '0.75rem', color: '#a78bfa', overflowX: 'auto', margin: 0 }}>
+                                        <pre style={{ background: 'var(--bg-surface-subtle)', padding: '10px', borderRadius: '6px', fontSize: '0.75rem', color: '#a78bfa', overflowX: 'auto', margin: 0 }}>
                                           {JSON.stringify(log.attributes, null, 2)}
                                         </pre>
                                       </div>
@@ -1627,7 +1803,7 @@ export default function ConsoleDashboard() {
               <div className="glass-panel" style={{ overflow: 'hidden' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
                   <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border-subtle)', background: 'rgba(255, 255, 255, 0.02)' }}>
+                    <tr style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-surface-subtle)' }}>
                       <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Timestamp</th>
                       <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Actor</th>
                       <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Action</th>
@@ -1659,7 +1835,7 @@ export default function ConsoleDashboard() {
                             <tr
                               onClick={() => setExpandedAuditId(isExpanded ? null : log.id)}
                               style={{
-                                borderBottom: '1px solid rgba(255, 255, 255, 0.04)',
+                                borderBottom: '1px solid var(--border-subtle)',
                                 cursor: 'pointer',
                                 background: isExpanded ? 'rgba(99, 102, 241, 0.08)' : 'transparent',
                                 transition: 'background 0.15s ease',
@@ -1668,7 +1844,7 @@ export default function ConsoleDashboard() {
                               <td style={{ padding: '12px 16px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>
                                 {new Date(log.timestamp).toLocaleString()}
                               </td>
-                              <td style={{ padding: '12px 16px', color: '#f8fafc', fontWeight: 500 }}>
+                              <td style={{ padding: '12px 16px', color: 'var(--text-main)', fontWeight: 500 }}>
                                 {log.actor}
                               </td>
                               <td style={{ padding: '12px 16px' }}>
@@ -1686,10 +1862,10 @@ export default function ConsoleDashboard() {
                               </td>
                             </tr>
                             {isExpanded && (
-                              <tr style={{ background: 'rgba(15, 23, 42, 0.6)', borderBottom: '1px solid var(--border-subtle)' }}>
+                              <tr style={{ background: 'var(--bg-surface-subtle)', borderBottom: '1px solid var(--border-subtle)' }}>
                                 <td colSpan={5} style={{ padding: '16px 24px' }}>
                                   <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginBottom: '6px' }}>MUTATION DIFF (SECRETS REDACTED)</div>
-                                  <pre style={{ background: 'rgba(0,0,0,0.5)', padding: '12px', borderRadius: '8px', fontSize: '0.8rem', color: '#38bdf8', overflowX: 'auto', margin: 0 }}>
+                                  <pre style={{ background: 'var(--bg-surface-subtle)', padding: '12px', borderRadius: '8px', fontSize: '0.8rem', color: '#38bdf8', overflowX: 'auto', margin: 0 }}>
                                     {JSON.stringify(log.diff, null, 2)}
                                   </pre>
                                 </td>
@@ -1705,17 +1881,52 @@ export default function ConsoleDashboard() {
             </div>
           )}
 
-          {/* Other Tabs */}
-          {activeTab !== 'projects' && activeTab !== 'mcp-servers' && activeTab !== 'gateways' && activeTab !== 'logs' && activeTab !== 'audit' && (
-            <div className="glass-panel" style={{ padding: '40px', textAlign: 'center' }}>
-              <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>🚧</div>
-              <h3 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '8px' }}>
-                Module Scheduled in Roadmap
-              </h3>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', maxWidth: '480px', margin: '0 auto' }}>
-                This section is part of upcoming implementation phases according to Section 11 of the architecture plan.
-              </p>
-            </div>
+          {/* TAB: INBOUND & MCP ENDPOINTS */}
+          {activeTab === 'inbound-endpoints' && (
+            <InboundEndpointsView
+              projects={projects}
+              gatewaysList={gatewaysList}
+              onNavigateToPolicies={(projId) => {
+                setSelectedProjectId(projId);
+                setActiveTab('policies');
+              }}
+              onNavigateToCerts={() => {
+                setActiveTab('certificates');
+              }}
+              onInspectGateway={(gwId) => handleInspectGateway(gwId)}
+              onRefresh={() => {
+                loadProjects();
+                loadGateways();
+              }}
+            />
+          )}
+
+          {/* TAB: PROJECT POLICIES & ENFORCEMENT */}
+          {activeTab === 'policies' && (
+            <ProjectPoliciesView
+              projects={projects}
+              selectedProjectId={selectedProjectId || projects[0]?.id}
+              onSelectProject={(projId) => setSelectedProjectId(projId)}
+              onRefreshProjects={loadProjects}
+              showBanner={showBanner}
+            />
+          )}
+
+          {/* TAB: CERTIFICATES & SECURITY HUB */}
+          {activeTab === 'certificates' && (
+            <CertificatesSettingsView
+              gatewaysList={gatewaysList}
+              onRefreshGateways={loadGateways}
+              showBanner={showBanner}
+            />
+          )}
+
+          {/* TAB: OAUTH & SECRETS */}
+          {activeTab === 'oauth' && (
+            <OAuthSecretsView
+              projects={projects}
+              showBanner={showBanner}
+            />
           )}
         </main>
       </div>
@@ -1725,7 +1936,7 @@ export default function ConsoleDashboard() {
         <div style={{
           position: 'fixed',
           inset: 0,
-          background: 'rgba(0, 0, 0, 0.75)',
+          background: 'rgba(15, 23, 42, 0.45)',
           backdropFilter: 'blur(8px)',
           display: 'flex',
           alignItems: 'center',
@@ -1734,7 +1945,7 @@ export default function ConsoleDashboard() {
           padding: '20px'
         }}>
           <div className="glass-panel" style={{ width: '100%', maxWidth: '480px', padding: '32px' }}>
-            <h3 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#f8fafc', marginBottom: '8px' }}>
+            <h3 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '8px' }}>
               Create New Project
             </h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '20px' }}>
@@ -1784,7 +1995,7 @@ export default function ConsoleDashboard() {
                   className="input-field"
                   value={newProjectGatewayId}
                   onChange={(e) => setNewProjectGatewayId(e.target.value)}
-                  style={{ width: '100%', background: 'rgba(15, 23, 42, 0.8)', color: '#f8fafc', padding: '10px 12px' }}
+                  style={{ width: '100%', background: 'var(--bg-surface)', color: 'var(--text-main)', padding: '10px 12px' }}
                 >
                   <option value="">🌐 All Live Gateways (Global Broadcast)</option>
                   {gatewaysList.map((gw: any) => (
@@ -1825,7 +2036,7 @@ export default function ConsoleDashboard() {
         <div style={{
           position: 'fixed',
           inset: 0,
-          background: 'rgba(0, 0, 0, 0.75)',
+          background: 'rgba(15, 23, 42, 0.45)',
           backdropFilter: 'blur(8px)',
           display: 'flex',
           alignItems: 'center',
@@ -1834,7 +2045,7 @@ export default function ConsoleDashboard() {
           padding: '20px'
         }}>
           <div className="glass-panel" style={{ width: '100%', maxWidth: '520px', padding: '32px' }}>
-            <h3 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#f8fafc', marginBottom: '8px' }}>
+            <h3 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '8px' }}>
               Add Downstream MCP Server
             </h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
@@ -1842,7 +2053,7 @@ export default function ConsoleDashboard() {
             </p>
 
             {/* Quick Presets */}
-            <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '12px', borderRadius: '8px', marginBottom: '18px' }}>
+            <div style={{ background: 'var(--bg-surface-subtle)', padding: '12px', borderRadius: '8px', marginBottom: '18px' }}>
               <span style={{ fontSize: '0.78rem', color: 'var(--text-dim)', fontWeight: 600, display: 'block', marginBottom: '8px' }}>
                 QUICK TEST PRESETS:
               </span>
@@ -1959,7 +2170,7 @@ export default function ConsoleDashboard() {
         <div style={{
           position: 'fixed',
           inset: 0,
-          background: 'rgba(0, 0, 0, 0.75)',
+          background: 'rgba(15, 23, 42, 0.45)',
           backdropFilter: 'blur(8px)',
           display: 'flex',
           alignItems: 'center',
@@ -1968,7 +2179,7 @@ export default function ConsoleDashboard() {
           padding: '20px'
         }}>
           <div className="glass-panel" style={{ width: '100%', maxWidth: '500px', padding: '32px' }}>
-            <h3 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#f8fafc', marginBottom: '8px' }}>
+            <h3 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '8px' }}>
               Register Gateway Instance
             </h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
@@ -1981,7 +2192,7 @@ export default function ConsoleDashboard() {
                   <span style={{ fontSize: '0.8rem', color: '#34d399', fontWeight: 600, display: 'block', marginBottom: '6px' }}>
                     GATEWAY SECRET GENERATED:
                   </span>
-                  <code style={{ fontSize: '0.95rem', color: '#ffffff', wordBreak: 'break-all', display: 'block', background: 'rgba(0,0,0,0.4)', padding: '10px', borderRadius: '6px' }}>
+                  <code style={{ fontSize: '0.95rem', color: '#ffffff', wordBreak: 'break-all', display: 'block', background: 'var(--bg-surface-subtle)', padding: '10px', borderRadius: '6px' }}>
                     {generatedSecret}
                   </code>
                   <span style={{ fontSize: '0.75rem', color: '#fda4af', display: 'block', marginTop: '8px' }}>
@@ -2046,7 +2257,7 @@ export default function ConsoleDashboard() {
         <div style={{
           position: 'fixed',
           inset: 0,
-          background: 'rgba(0, 0, 0, 0.75)',
+          background: 'rgba(15, 23, 42, 0.45)',
           backdropFilter: 'blur(8px)',
           display: 'flex',
           alignItems: 'center',
@@ -2055,7 +2266,7 @@ export default function ConsoleDashboard() {
           padding: '20px'
         }}>
           <div className="glass-panel" style={{ width: '100%', maxWidth: '520px', padding: '32px' }}>
-            <h3 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#f8fafc', marginBottom: '8px' }}>
+            <h3 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '8px' }}>
               🔑 Gateway Secret Rotated
             </h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
@@ -2066,7 +2277,7 @@ export default function ConsoleDashboard() {
               ⚠️ <strong>Save this secret immediately.</strong> It will NEVER be shown again in the console or logs.
             </div>
 
-            <div style={{ background: 'rgba(0,0,0,0.4)', padding: '14px', borderRadius: '8px', marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ background: 'var(--bg-surface-subtle)', padding: '14px', borderRadius: '8px', marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <code style={{ fontSize: '0.95rem', color: 'var(--accent-cyan)', wordBreak: 'break-all' }}>
                 {rotatedSecretModal.secret}
               </code>
@@ -2099,8 +2310,8 @@ export default function ConsoleDashboard() {
         <div style={{
           position: 'fixed',
           inset: 0,
-          background: 'rgba(0, 0, 0, 0.82)',
-          backdropFilter: 'blur(12px)',
+          background: 'rgba(15, 23, 42, 0.45)',
+          backdropFilter: 'blur(6px)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -2113,17 +2324,17 @@ export default function ConsoleDashboard() {
             maxHeight: '92vh',
             display: 'flex',
             flexDirection: 'column',
-            background: 'linear-gradient(180deg, #1e293b 0%, #0f172a 100%)',
-            border: '1px solid rgba(255, 255, 255, 0.12)',
-            borderRadius: '16px',
-            boxShadow: '0 25px 60px rgba(0, 0, 0, 0.75)',
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--radius-lg)',
+            boxShadow: 'var(--card-hover-shadow)',
             overflow: 'hidden'
           }}>
             {/* Modal Header */}
             <div style={{
               padding: '20px 28px',
               borderBottom: '1px solid var(--border-subtle)',
-              background: 'rgba(15, 23, 42, 0.6)',
+              background: 'var(--bg-surface-subtle)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -2144,7 +2355,7 @@ export default function ConsoleDashboard() {
                   }}>
                     ⚡
                   </div>
-                  <h3 style={{ fontSize: '1.35rem', fontWeight: 700, color: '#f8fafc', margin: 0 }}>
+                  <h3 style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-main)', margin: 0 }}>
                     AI Gateway Deep Inspector
                   </h3>
                   <code style={{ fontSize: '0.85rem', color: 'var(--accent-cyan)', background: 'rgba(6, 182, 212, 0.12)', padding: '2px 8px', borderRadius: '4px' }}>
@@ -2172,24 +2383,70 @@ export default function ConsoleDashboard() {
                 )}
               </div>
 
-              <button
-                onClick={() => {
-                  setInspectingGatewayId(null);
-                  setInspectingGatewayData(null);
-                }}
-                className="btn-secondary"
-                style={{ fontSize: '1.1rem', padding: '6px 12px', lineHeight: 1 }}
-                title="Close Inspector"
-              >
-                ✕
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  onClick={() => {
+                    const gw = gatewaysList.find(g => g.id === (inspectingGatewayData?.gateway?.id || inspectingGatewayId) || g.name === (inspectingGatewayData?.gateway?.name || inspectingGatewayId));
+                    if (gw) openManageBindings(gw);
+                  }}
+                  className="btn-secondary"
+                  style={{ fontSize: '0.75rem', padding: '6px 10px', color: '#c7d2fe' }}
+                  title="Configure mapped projects for this gateway"
+                >
+                  🔗 Edit Bindings
+                </button>
+                <button
+                  onClick={() => {
+                    setInspectingGatewayId(null);
+                    setActiveTab('inbound-endpoints');
+                  }}
+                  className="btn-secondary"
+                  style={{ fontSize: '0.75rem', padding: '6px 10px', color: 'var(--accent-cyan)' }}
+                  title="Open in dedicated Inbound Endpoints page"
+                >
+                  🌐 Endpoints View ➔
+                </button>
+                <button
+                  onClick={() => {
+                    setInspectingGatewayId(null);
+                    setActiveTab('policies');
+                  }}
+                  className="btn-secondary"
+                  style={{ fontSize: '0.75rem', padding: '6px 10px', color: '#10b981' }}
+                  title="Open in dedicated Project Policies page"
+                >
+                  🛡️ Policies Page ➔
+                </button>
+                <button
+                  onClick={() => {
+                    setInspectingGatewayId(null);
+                    setActiveTab('certificates');
+                  }}
+                  className="btn-secondary"
+                  style={{ fontSize: '0.75rem', padding: '6px 10px', color: '#f59e0b' }}
+                  title="Open in dedicated Certificates & Security Hub"
+                >
+                  🔒 TLS Hub ➔
+                </button>
+                <button
+                  onClick={() => {
+                    setInspectingGatewayId(null);
+                    setInspectingGatewayData(null);
+                  }}
+                  className="btn-secondary"
+                  style={{ fontSize: '1.1rem', padding: '6px 12px', lineHeight: 1 }}
+                  title="Close Inspector"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
             {/* Sub-Tabs Navigation & Quick Filter */}
             <div style={{
               padding: '12px 28px',
               borderBottom: '1px solid var(--border-subtle)',
-              background: 'rgba(0, 0, 0, 0.25)',
+              background: 'var(--bg-surface-subtle)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -2200,15 +2457,15 @@ export default function ConsoleDashboard() {
                 <button
                   onClick={() => setInspectionTab('endpoints')}
                   style={{
-                    padding: '8px 16px',
-                    borderRadius: '8px',
+                    padding: '7px 14px',
+                    borderRadius: 'var(--radius-sm)',
                     fontSize: '0.82rem',
                     fontWeight: 600,
                     cursor: 'pointer',
                     transition: 'all 0.15s ease',
-                    border: inspectionTab === 'endpoints' ? '1px solid var(--accent-indigo)' : '1px solid transparent',
-                    background: inspectionTab === 'endpoints' ? 'rgba(99, 102, 241, 0.2)' : 'transparent',
-                    color: inspectionTab === 'endpoints' ? 'var(--text-main)' : 'var(--text-muted)'
+                    border: inspectionTab === 'endpoints' ? '1px solid var(--primary)' : '1px solid transparent',
+                    background: inspectionTab === 'endpoints' ? 'var(--primary-subtle)' : 'transparent',
+                    color: inspectionTab === 'endpoints' ? 'var(--primary-text)' : 'var(--text-muted)'
                   }}
                 >
                   🌐 Served Endpoints ({inspectingGatewayData?.endpoints?.length || 0})
@@ -2217,15 +2474,15 @@ export default function ConsoleDashboard() {
                 <button
                   onClick={() => setInspectionTab('downstreams')}
                   style={{
-                    padding: '8px 16px',
-                    borderRadius: '8px',
+                    padding: '7px 14px',
+                    borderRadius: 'var(--radius-sm)',
                     fontSize: '0.82rem',
                     fontWeight: 600,
                     cursor: 'pointer',
                     transition: 'all 0.15s ease',
-                    border: inspectionTab === 'downstreams' ? '1px solid var(--accent-cyan)' : '1px solid transparent',
-                    background: inspectionTab === 'downstreams' ? 'rgba(6, 182, 212, 0.2)' : 'transparent',
-                    color: inspectionTab === 'downstreams' ? 'var(--text-main)' : 'var(--text-muted)'
+                    border: inspectionTab === 'downstreams' ? '1px solid var(--accent)' : '1px solid transparent',
+                    background: inspectionTab === 'downstreams' ? '#f0f9ff' : 'transparent',
+                    color: inspectionTab === 'downstreams' ? '#0369a1' : 'var(--text-muted)'
                   }}
                 >
                   ⚡ Downstream MCP Servers ({
@@ -2236,15 +2493,15 @@ export default function ConsoleDashboard() {
                 <button
                   onClick={() => setInspectionTab('policies')}
                   style={{
-                    padding: '8px 16px',
-                    borderRadius: '8px',
+                    padding: '7px 14px',
+                    borderRadius: 'var(--radius-sm)',
                     fontSize: '0.82rem',
                     fontWeight: 600,
                     cursor: 'pointer',
                     transition: 'all 0.15s ease',
-                    border: inspectionTab === 'policies' ? '1px solid var(--accent-emerald)' : '1px solid transparent',
-                    background: inspectionTab === 'policies' ? 'rgba(16, 185, 129, 0.2)' : 'transparent',
-                    color: inspectionTab === 'policies' ? 'var(--text-main)' : 'var(--text-muted)'
+                    border: inspectionTab === 'policies' ? '1px solid #10b981' : '1px solid transparent',
+                    background: inspectionTab === 'policies' ? '#ecfdf5' : 'transparent',
+                    color: inspectionTab === 'policies' ? '#047857' : 'var(--text-muted)'
                   }}
                 >
                   🛡️ Enforced Policies &amp; Rules
@@ -2253,15 +2510,15 @@ export default function ConsoleDashboard() {
                 <button
                   onClick={() => setInspectionTab('tls')}
                   style={{
-                    padding: '8px 16px',
-                    borderRadius: '8px',
+                    padding: '7px 14px',
+                    borderRadius: 'var(--radius-sm)',
                     fontSize: '0.82rem',
                     fontWeight: 600,
                     cursor: 'pointer',
                     transition: 'all 0.15s ease',
                     border: inspectionTab === 'tls' ? '1px solid #f59e0b' : '1px solid transparent',
-                    background: inspectionTab === 'tls' ? 'rgba(245, 158, 11, 0.2)' : 'transparent',
-                    color: inspectionTab === 'tls' ? 'var(--text-main)' : 'var(--text-muted)'
+                    background: inspectionTab === 'tls' ? '#fffbeb' : 'transparent',
+                    color: inspectionTab === 'tls' ? '#b45309' : 'var(--text-muted)'
                   }}
                 >
                   🔒 Protocol &amp; Certificate Hub
@@ -2273,14 +2530,11 @@ export default function ConsoleDashboard() {
                 placeholder="Search endpoints, tools, or URLs..."
                 value={inspectSearchQuery}
                 onChange={(e) => setInspectSearchQuery(e.target.value)}
+                className="input-field"
                 style={{
-                  background: 'rgba(15, 23, 42, 0.7)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: '6px',
+                  width: '240px',
                   padding: '6px 12px',
-                  color: '#fff',
-                  fontSize: '0.8rem',
-                  width: '240px'
+                  fontSize: '0.8rem'
                 }}
               />
             </div>
@@ -2337,16 +2591,16 @@ export default function ConsoleDashboard() {
                   <div>
                     {/* Multi-Project Summary Stats Bar */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '18px' }}>
-                      <div className="glass-panel" style={{ padding: '12px 16px', background: 'rgba(255, 255, 255, 0.02)' }}>
+                      <div className="glass-panel" style={{ padding: '12px 16px', background: 'var(--bg-surface-subtle)' }}>
                         <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                           Mapped Projects
                         </span>
-                        <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#f8fafc', marginTop: '2px' }}>
+                        <div style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-main)', marginTop: '2px' }}>
                           {totalProjectsCount}
                         </div>
                       </div>
 
-                      <div className="glass-panel" style={{ padding: '12px 16px', background: 'rgba(255, 255, 255, 0.02)' }}>
+                      <div className="glass-panel" style={{ padding: '12px 16px', background: 'var(--bg-surface-subtle)' }}>
                         <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                           Upstream MCP Servers
                         </span>
@@ -2355,7 +2609,7 @@ export default function ConsoleDashboard() {
                         </div>
                       </div>
 
-                      <div className="glass-panel" style={{ padding: '12px 16px', background: 'rgba(255, 255, 255, 0.02)' }}>
+                      <div className="glass-panel" style={{ padding: '12px 16px', background: 'var(--bg-surface-subtle)' }}>
                         <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                           Active Tool Policies
                         </span>
@@ -2364,7 +2618,7 @@ export default function ConsoleDashboard() {
                         </div>
                       </div>
 
-                      <div className="glass-panel" style={{ padding: '12px 16px', background: 'rgba(255, 255, 255, 0.02)' }}>
+                      <div className="glass-panel" style={{ padding: '12px 16px', background: 'var(--bg-surface-subtle)' }}>
                         <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                           Encrypted Upstreams (TLS)
                         </span>
@@ -2376,7 +2630,7 @@ export default function ConsoleDashboard() {
 
                     {/* Interactive Project Scope Selector (Horizontal Pills) */}
                     <div style={{
-                      background: 'rgba(0, 0, 0, 0.35)',
+                      background: 'var(--bg-surface-subtle)',
                       padding: '10px 14px',
                       borderRadius: '8px',
                       border: '1px solid var(--border-subtle)',
@@ -2425,7 +2679,7 @@ export default function ConsoleDashboard() {
                           }}
                         >
                           <span>{ep.project_name}</span>
-                          <span style={{ fontSize: '0.68rem', color: 'var(--accent-cyan)', background: 'rgba(0, 0, 0, 0.4)', padding: '1px 5px', borderRadius: '4px' }}>
+                          <span style={{ fontSize: '0.68rem', color: 'var(--accent-cyan)', background: 'var(--bg-surface-subtle)', padding: '1px 5px', borderRadius: '4px' }}>
                             {ep.downstream_servers?.length || 0}
                           </span>
                         </button>
@@ -2544,10 +2798,10 @@ export default function ConsoleDashboard() {
                         {filteredEndpoints.length > 0 ? (
                           inspectViewMode === 'table' ? (
                             /* HIGH DENSITY TABLE VIEW FOR MULTI-PROJECTS */
-                            <div style={{ background: 'rgba(0, 0, 0, 0.35)', border: '1px solid var(--border-subtle)', borderRadius: '10px', overflow: 'hidden' }}>
+                            <div style={{ background: 'var(--bg-surface-subtle)', border: '1px solid var(--border-subtle)', borderRadius: '10px', overflow: 'hidden' }}>
                               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
                                 <thead>
-                                  <tr style={{ background: 'rgba(0, 0, 0, 0.5)', textAlign: 'left', borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                                  <tr style={{ background: 'var(--bg-surface-subtle)', textAlign: 'left', borderBottom: '1px solid var(--border-subtle)' }}>
                                     <th style={{ padding: '10px 14px' }}>Project Name &amp; Slug</th>
                                     <th style={{ padding: '10px 14px' }}>Inbound Endpoint URL</th>
                                     <th style={{ padding: '10px 14px' }}>Inbound Auth</th>
@@ -2567,7 +2821,7 @@ export default function ConsoleDashboard() {
                                       }}
                                     >
                                       <td style={{ padding: '10px 14px' }}>
-                                        <div style={{ fontWeight: 600, color: '#f8fafc' }}>{ep.project_name}</div>
+                                        <div style={{ fontWeight: 600, color: 'var(--text-main)' }}>{ep.project_name}</div>
                                         <code style={{ fontSize: '0.72rem', color: 'var(--accent-cyan)' }}>/{ep.slug}</code>
                                       </td>
                                       <td style={{ padding: '10px 14px' }}>
@@ -2631,14 +2885,14 @@ export default function ConsoleDashboard() {
                                   className="glass-panel"
                                   style={{
                                     padding: '18px 22px',
-                                    background: 'rgba(255, 255, 255, 0.02)',
+                                    background: 'var(--bg-surface-subtle)',
                                     border: '1px solid var(--border-subtle)',
                                     borderRadius: '10px'
                                   }}
                                 >
                                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                      <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: '#f8fafc' }}>
+                                      <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: 'var(--text-main)' }}>
                                         {ep.project_name}
                                       </h4>
                                       <span className="badge badge-cyan" style={{ fontSize: '0.7rem' }}>
@@ -2661,7 +2915,7 @@ export default function ConsoleDashboard() {
 
                                   {/* Endpoint URL Bar */}
                                   <div style={{
-                                    background: 'rgba(0, 0, 0, 0.45)',
+                                    background: 'var(--bg-surface)',
                                     border: '1px solid rgba(255, 255, 255, 0.08)',
                                     padding: '10px 14px',
                                     borderRadius: '8px',
@@ -2690,7 +2944,7 @@ export default function ConsoleDashboard() {
 
                                   {/* OAuth Discovery Bar */}
                                   <div style={{
-                                    background: 'rgba(0, 0, 0, 0.25)',
+                                    background: 'var(--bg-surface-subtle)',
                                     border: '1px solid rgba(255, 255, 255, 0.05)',
                                     padding: '8px 14px',
                                     borderRadius: '6px',
@@ -2732,7 +2986,7 @@ export default function ConsoleDashboard() {
                         {filteredEndpoints.length > 0 ? (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                             {filteredEndpoints.map((ep: any) => (
-                              <div key={ep.project_id} style={{ background: 'rgba(0, 0, 0, 0.2)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-subtle)' }}>
+                              <div key={ep.project_id} style={{ background: 'var(--bg-surface)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-subtle)' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
                                   <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600, color: 'var(--accent-cyan)' }}>
                                     Project: {ep.project_name} ({ep.downstream_servers?.length || 0} Upstream Servers)
@@ -2755,7 +3009,7 @@ export default function ConsoleDashboard() {
                                         <div
                                           key={s.id}
                                           style={{
-                                            background: 'rgba(255, 255, 255, 0.03)',
+                                            background: 'var(--bg-surface-subtle)',
                                             border: '1px solid rgba(255, 255, 255, 0.07)',
                                             borderRadius: '8px',
                                             padding: '14px'
@@ -2775,7 +3029,7 @@ export default function ConsoleDashboard() {
                                           </div>
 
                                           <div style={{
-                                            background: 'rgba(0, 0, 0, 0.4)',
+                                            background: 'var(--bg-surface-subtle)',
                                             padding: '6px 8px',
                                             borderRadius: '4px',
                                             fontSize: '0.72rem',
@@ -2821,14 +3075,14 @@ export default function ConsoleDashboard() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                         {filteredEndpoints.length > 0 ? (
                           filteredEndpoints.map((ep: any) => (
-                            <div key={ep.project_id} style={{ background: 'rgba(0, 0, 0, 0.25)', border: '1px solid var(--border-subtle)', borderRadius: '10px', padding: '18px' }}>
-                              <h4 style={{ margin: '0 0 14px 0', fontSize: '1rem', fontWeight: 600, color: '#f8fafc' }}>
+                            <div key={ep.project_id} style={{ background: 'var(--bg-surface-subtle)', border: '1px solid var(--border-subtle)', borderRadius: '10px', padding: '18px' }}>
+                              <h4 style={{ margin: '0 0 14px 0', fontSize: '1rem', fontWeight: 600, color: 'var(--text-main)' }}>
                                 Policy Stack for {ep.project_name}
                               </h4>
 
                               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px', marginBottom: '16px' }}>
                                 {/* Inbound Auth Policy Card */}
-                                <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '12px 14px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                                <div style={{ background: 'var(--bg-surface-subtle)', padding: '12px 14px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
                                   <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
                                     INBOUND AUTHENTICATION
                                   </div>
@@ -2846,7 +3100,7 @@ export default function ConsoleDashboard() {
                                 </div>
 
                                 {/* Traffic Guardrails Card */}
-                                <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '12px 14px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                                <div style={{ background: 'var(--bg-surface-subtle)', padding: '12px 14px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
                                   <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
                                     TRAFFIC &amp; RATE GUARDRAILS
                                   </div>
@@ -2871,7 +3125,7 @@ export default function ConsoleDashboard() {
                                 {ep.downstream_servers?.some((s: any) => s.tool_policies?.length > 0) ? (
                                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
                                     <thead>
-                                      <tr style={{ background: 'rgba(0, 0, 0, 0.4)', textAlign: 'left', borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                                      <tr style={{ background: 'var(--bg-surface-subtle)', textAlign: 'left', borderBottom: '1px solid var(--border-subtle)' }}>
                                         <th style={{ padding: '8px 10px' }}>Server Prefix</th>
                                         <th style={{ padding: '8px 10px' }}>Tool Name</th>
                                         <th style={{ padding: '8px 10px' }}>Policy Status</th>
@@ -2881,11 +3135,11 @@ export default function ConsoleDashboard() {
                                     <tbody>
                                       {ep.downstream_servers.flatMap((s: any) =>
                                         (s.tool_policies || []).map((tp: any, idx: number) => (
-                                          <tr key={`${s.id}-${idx}`} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
+                                          <tr key={`${s.id}-${idx}`} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
                                             <td style={{ padding: '8px 10px', color: 'var(--accent-indigo)' }}>
                                               <code>{s.namespace_prefix || 'root'}</code>
                                             </td>
-                                            <td style={{ padding: '8px 10px', fontWeight: 600, color: '#f8fafc' }}>
+                                            <td style={{ padding: '8px 10px', fontWeight: 600, color: 'var(--text-main)' }}>
                                               {tp.tool_name}
                                             </td>
                                             <td style={{ padding: '8px 10px' }}>
@@ -2923,7 +3177,7 @@ export default function ConsoleDashboard() {
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px' }}>
                           {/* Inbound TLS Panel */}
                           <div style={{
-                            background: 'rgba(0, 0, 0, 0.3)',
+                            background: 'var(--bg-surface)',
                             border: '1px solid rgba(16, 185, 129, 0.3)',
                             borderRadius: '12px',
                             padding: '20px'
@@ -2931,7 +3185,7 @@ export default function ConsoleDashboard() {
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <span style={{ fontSize: '1.2rem' }}>🔒</span>
-                                <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#f8fafc' }}>
+                                <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: 'var(--text-main)' }}>
                                   Inbound Gateway Listener Security
                                 </h4>
                               </div>
@@ -2982,7 +3236,7 @@ export default function ConsoleDashboard() {
 
                           {/* Outbound Downstream TLS Panel */}
                           <div style={{
-                            background: 'rgba(0, 0, 0, 0.3)',
+                            background: 'var(--bg-surface)',
                             border: '1px solid rgba(6, 182, 212, 0.3)',
                             borderRadius: '12px',
                             padding: '20px'
@@ -2990,7 +3244,7 @@ export default function ConsoleDashboard() {
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <span style={{ fontSize: '1.2rem' }}>🌐</span>
-                                <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#f8fafc' }}>
+                                <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: 'var(--text-main)' }}>
                                   Outbound Downstream MCP Security
                                 </h4>
                               </div>
@@ -3033,13 +3287,13 @@ export default function ConsoleDashboard() {
                         </div>
 
                         {/* Detailed Connection Security Matrix */}
-                        <div style={{ background: 'rgba(0, 0, 0, 0.25)', borderRadius: '10px', padding: '16px', border: '1px solid var(--border-subtle)' }}>
+                        <div style={{ background: 'var(--bg-surface-subtle)', borderRadius: '10px', padding: '16px', border: '1px solid var(--border-subtle)' }}>
                           <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '12px' }}>
                             DOWNSTREAM SERVER ENCRYPTION STATUS
                           </div>
                           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
                             <thead>
-                              <tr style={{ background: 'rgba(0, 0, 0, 0.4)', textAlign: 'left', borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                              <tr style={{ background: 'var(--bg-surface-subtle)', textAlign: 'left', borderBottom: '1px solid var(--border-subtle)' }}>
                                 <th style={{ padding: '8px 10px' }}>Upstream MCP Server</th>
                                 <th style={{ padding: '8px 10px' }}>Target URL</th>
                                 <th style={{ padding: '8px 10px' }}>Scheme</th>
@@ -3049,8 +3303,8 @@ export default function ConsoleDashboard() {
                             <tbody>
                               {filteredEndpoints.flatMap((ep: any) =>
                                 (ep.downstream_servers || []).map((s: any) => (
-                                  <tr key={s.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
-                                    <td style={{ padding: '8px 10px', fontWeight: 600, color: '#f8fafc' }}>
+                                  <tr key={s.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                                    <td style={{ padding: '8px 10px', fontWeight: 600, color: 'var(--text-main)' }}>
                                       {s.name} <span style={{ color: 'var(--text-dim)', fontSize: '0.72rem' }}>({ep.project_name})</span>
                                     </td>
                                     <td style={{ padding: '8px 10px', color: 'var(--accent-cyan)' }}>
@@ -3089,7 +3343,7 @@ export default function ConsoleDashboard() {
             <div style={{
               padding: '14px 28px',
               borderTop: '1px solid var(--border-subtle)',
-              background: 'rgba(15, 23, 42, 0.6)',
+              background: 'var(--bg-surface-subtle)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between'
@@ -3105,6 +3359,265 @@ export default function ConsoleDashboard() {
                 className="btn-primary"
               >
                 Close Inspector
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MANAGE PROJECT BINDINGS MODAL */}
+      {bindingGateway && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.45)',
+          backdropFilter: 'blur(6px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}>
+          <div className="glass-panel" style={{
+            maxWidth: '620px',
+            width: '100%',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--radius-lg)',
+            boxShadow: 'var(--card-hover-shadow)'
+          }}>
+            {/* Header */}
+            <div style={{
+              padding: '20px 24px',
+              borderBottom: '1px solid var(--border-subtle)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: 'var(--bg-surface-subtle)'
+            }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '1.3rem' }}>🔗</span>
+                  <h3 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-main)', margin: 0 }}>
+                    Map Projects to Gateway
+                  </h3>
+                </div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                  Configure which project endpoints are hosted and served by{' '}
+                  <strong style={{ color: 'var(--primary-text)' }}>{bindingGateway.name}</strong>
+                </div>
+              </div>
+              <button
+                onClick={() => setBindingGateway(null)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  fontSize: '1.2rem',
+                  cursor: 'pointer',
+                  padding: '4px 8px'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {/* Routing Mode Choice */}
+              <div>
+                <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '8px', display: 'block' }}>
+                  Gateway Routing &amp; Binding Mode
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div
+                    onClick={() => setBindingSelectedMode('global')}
+                    style={{
+                      padding: '14px',
+                      borderRadius: 'var(--radius-md)',
+                      border: bindingSelectedMode === 'global' ? '2px solid var(--primary)' : '1px solid var(--border-subtle)',
+                      background: bindingSelectedMode === 'global' ? 'var(--primary-subtle)' : 'var(--bg-surface)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                      <input
+                        type="radio"
+                        checked={bindingSelectedMode === 'global'}
+                        onChange={() => setBindingSelectedMode('global')}
+                      />
+                      <strong style={{ fontSize: '0.88rem', color: 'var(--text-main)' }}>🌐 Global Mode</strong>
+                    </div>
+                    <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0, paddingLeft: '22px' }}>
+                      Gateway hosts <strong>all active projects</strong> ({projects.length}) in the organization dynamically.
+                    </p>
+                  </div>
+
+                  <div
+                    onClick={() => setBindingSelectedMode('targeted')}
+                    style={{
+                      padding: '14px',
+                      borderRadius: 'var(--radius-md)',
+                      border: bindingSelectedMode === 'targeted' ? '2px solid var(--primary)' : '1px solid var(--border-subtle)',
+                      background: bindingSelectedMode === 'targeted' ? 'var(--primary-subtle)' : 'var(--bg-surface)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                      <input
+                        type="radio"
+                        checked={bindingSelectedMode === 'targeted'}
+                        onChange={() => setBindingSelectedMode('targeted')}
+                      />
+                      <strong style={{ fontSize: '0.88rem', color: 'var(--text-main)' }}>🎯 Targeted Mode</strong>
+                    </div>
+                    <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0, paddingLeft: '22px' }}>
+                      Gateway strictly isolates and serves only explicitly selected projects.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Projects Selection List */}
+              {bindingSelectedMode === 'targeted' && (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-main)' }}>
+                      Select Target Projects ({bindingSelectedProjectIds.length} of {projects.length} selected):
+                    </label>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        onClick={() => setBindingSelectedProjectIds(projects.map(p => p.id))}
+                        className="btn-secondary"
+                        style={{ fontSize: '0.7rem', padding: '2px 8px' }}
+                      >
+                        Select All
+                      </button>
+                      <button
+                        onClick={() => setBindingSelectedProjectIds([])}
+                        className="btn-secondary"
+                        style={{ fontSize: '0.7rem', padding: '2px 8px' }}
+                      >
+                        Clear All
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{
+                    maxHeight: '260px',
+                    overflowY: 'auto',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 'var(--radius-md)',
+                    background: 'var(--bg-surface-subtle)',
+                    padding: '8px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px'
+                  }}>
+                    {projects.map((p) => {
+                      const isSelected = bindingSelectedProjectIds.includes(p.id);
+                      return (
+                        <div
+                          key={p.id}
+                          onClick={() => {
+                            if (isSelected) {
+                              setBindingSelectedProjectIds(bindingSelectedProjectIds.filter(id => id !== p.id));
+                            } else {
+                              setBindingSelectedProjectIds([...bindingSelectedProjectIds, p.id]);
+                            }
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '10px 12px',
+                            borderRadius: 'var(--radius-sm)',
+                            background: isSelected ? 'var(--primary-subtle)' : 'var(--bg-surface)',
+                            border: isSelected ? '1px solid var(--primary)' : '1px solid var(--border-subtle)',
+                            cursor: 'pointer',
+                            transition: 'all 0.12s ease'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {}} // handled by parent div onClick
+                              style={{ cursor: 'pointer' }}
+                            />
+                            <div>
+                              <div style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '0.85rem' }}>
+                                {p.name}
+                              </div>
+                              <code style={{ fontSize: '0.72rem', color: 'var(--primary-text)' }}>
+                                /p/{p.slug}/mcp
+                              </code>
+                            </div>
+                          </div>
+                          <span className="badge badge-indigo" style={{ fontSize: '0.7rem' }}>
+                            {p.servers?.length ?? p.server_count ?? 0} Upstream MCPs
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Status Note */}
+              <div style={{
+                background: 'var(--bg-surface-subtle)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '12px',
+                fontSize: '0.8rem',
+                color: 'var(--text-muted)'
+              }}>
+                <span style={{ color: 'var(--primary-text)', fontWeight: 600 }}>💡 Fleet Routing Note: </span>
+                {bindingSelectedMode === 'global' ? (
+                  <span>
+                    In <strong>Global Mode</strong>, gateway <code>{bindingGateway.name}</code> handles all inbound traffic across every project and automatically registers newly created projects.
+                  </span>
+                ) : (
+                  <span>
+                    In <strong>Targeted Mode</strong>, this gateway will <strong>strictly route</strong> to the {bindingSelectedProjectIds.length} project(s) chosen above. Requests for unmapped projects will return 404 Route Not Bound.
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              padding: '16px 24px',
+              borderTop: '1px solid var(--border-subtle)',
+              background: 'var(--bg-surface-subtle)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              gap: '10px'
+            }}>
+              <button
+                onClick={() => setBindingGateway(null)}
+                className="btn-secondary"
+                disabled={bindingSaving}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveBindings}
+                className="btn-primary"
+                disabled={bindingSaving}
+              >
+                {bindingSaving ? 'Saving...' : '💾 Save Bindings'}
               </button>
             </div>
           </div>

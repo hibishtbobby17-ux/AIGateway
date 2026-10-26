@@ -29,7 +29,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         created_at, 
         updated_at
       FROM gateway_instances
-      WHERE id = $1
+      WHERE id::text = $1 OR name = $1
     `, [params.id]);
 
     if (gwRes.rows.length === 0) {
@@ -37,6 +37,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     }
 
     const gw = gwRes.rows[0];
+    const actualGwId = gw.id;
     const now = Date.now();
     const lastSeen = gw.last_seen_at ? new Date(gw.last_seen_at).getTime() : 0;
     const isOnline = gw.status === 'active' && (now - lastSeen < 180000);
@@ -55,7 +56,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     // Check if this gateway has targeted project bindings
     const bindingsRes = await pool.query(
       'SELECT project_id FROM gateway_project_bindings WHERE gateway_id = $1',
-      [params.id]
+      [actualGwId]
     );
 
     const isTargeted = bindingsRes.rows.length > 0;
@@ -212,6 +213,87 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }
 }
 
+export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const session = getSessionFromRequest(req);
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    await initDatabase();
+
+    const gwRes = await pool.query(`
+      SELECT id, name, metrics, protocol, tls_enabled FROM gateway_instances WHERE id::text = $1 OR name = $1
+    `, [params.id]);
+
+    if (gwRes.rows.length === 0) {
+      return NextResponse.json({ error: 'Gateway instance not found' }, { status: 404 });
+    }
+
+    const gateway = gwRes.rows[0];
+    const actualGwId = gateway.id;
+    const body = await req.json();
+    const { protocol, tls_enabled, metrics, tls_telemetry, bound_project_ids } = body;
+
+    let mergedMetrics = gateway.metrics || {};
+    if (metrics) {
+      mergedMetrics = { ...mergedMetrics, ...metrics };
+    }
+    if (tls_telemetry) {
+      mergedMetrics.tls_telemetry = tls_telemetry;
+    }
+
+    const newProtocol = protocol !== undefined ? protocol : (tls_enabled ? 'https' : gateway.protocol);
+    const newTlsEnabled = tls_enabled !== undefined ? !!tls_enabled : (newProtocol === 'https');
+
+    await pool.query(`
+      UPDATE gateway_instances
+      SET 
+        protocol = $1,
+        tls_enabled = $2,
+        metrics = $3,
+        updated_at = NOW()
+      WHERE id = $4
+    `, [newProtocol, newTlsEnabled, JSON.stringify(mergedMetrics), actualGwId]);
+
+    // Handle project bindings update if provided
+    if (Array.isArray(bound_project_ids)) {
+      await pool.query('DELETE FROM gateway_project_bindings WHERE gateway_id = $1', [actualGwId]);
+      for (const pId of bound_project_ids) {
+        if (pId) {
+          await pool.query(`
+            INSERT INTO gateway_project_bindings (gateway_id, project_id)
+            VALUES ($1, $2)
+            ON CONFLICT DO NOTHING
+          `, [actualGwId, pId]);
+        }
+      }
+    }
+
+    await logAudit({
+      orgId: session.orgId,
+      actor: session.email,
+      action: 'gateway.update_settings',
+      target: `gateway:${gateway.name} (${gateway.id})`,
+      diff: { protocol: newProtocol, tls_enabled: newTlsEnabled, bound_project_ids },
+    });
+
+    return NextResponse.json({
+      success: true,
+      gateway: {
+        id: actualGwId,
+        name: gateway.name,
+        protocol: newProtocol,
+        tls_enabled: newTlsEnabled,
+        metrics: mergedMetrics,
+      },
+      message: 'Gateway configuration updated successfully',
+    });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const session = getSessionFromRequest(req);
@@ -222,7 +304,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     await initDatabase();
 
     const gwRes = await pool.query(`
-      SELECT id, name FROM gateway_instances WHERE id = $1
+      SELECT id, name FROM gateway_instances WHERE id::text = $1 OR name = $1
     `, [params.id]);
 
     if (gwRes.rows.length === 0) {
@@ -231,7 +313,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
 
     const gateway = gwRes.rows[0];
 
-    await pool.query('DELETE FROM gateway_instances WHERE id = $1', [params.id]);
+    await pool.query('DELETE FROM gateway_instances WHERE id = $1', [gateway.id]);
 
     await logAudit({
       orgId: session.orgId,
