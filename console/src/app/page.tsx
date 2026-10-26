@@ -5,6 +5,16 @@ import InboundEndpointsView from './components/InboundEndpointsView';
 import ProjectPoliciesView from './components/ProjectPoliciesView';
 import CertificatesSettingsView from './components/CertificatesSettingsView';
 import OAuthSecretsView from './components/OAuthSecretsView';
+import DashboardView from './components/DashboardView';
+import ProjectDetailView from './components/ProjectDetailView';
+import GatewayFleetView from './components/GatewayFleetView';
+import GatewayGraphicTopologyView from './components/GatewayGraphicTopologyView';
+import PolicyEditorView from './components/PolicyEditorView';
+import PoliciesListView from './components/PoliciesListView';
+import MCPMarketplaceView from './components/MCPMarketplaceView';
+import AgentsRegistryView from './components/AgentsRegistryView';
+import DeploySettingsView from './components/DeploySettingsView';
+import ConsoleConfigView from './components/ConsoleConfigView';
 
 interface User {
   userId: string;
@@ -65,7 +75,16 @@ export default function ConsoleDashboard() {
   const [user, setUser] = useState<User | null>(null);
   const [org, setOrg] = useState<Org | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
-  const [activeTab, setActiveTab] = useState<string>('projects');
+  const [activeTab, setActiveTab] = useState<string>('dashboard');
+
+  // Wireframe / Layout Navigation State
+  const [selectedProjectForDetail, setSelectedProjectForDetail] = useState<Project | null>(null);
+  const [selectedGatewayForTopology, setSelectedGatewayForTopology] = useState<any | null>(null);
+  const [deploySelectedGatewayId, setDeploySelectedGatewayId] = useState<string>('gateway-default-01');
+  const [deploySelectedGatewayKey, setDeploySelectedGatewayKey] = useState<string>('dev-gateway-secret');
+  const [policyMenuOpen, setPolicyMenuOpen] = useState<boolean>(true);
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState<boolean>(true);
+  const [showProfileDropdown, setShowProfileDropdown] = useState<boolean>(false);
 
   // Auth Form State
   const [email, setEmail] = useState<string>('admin@aigateway.local');
@@ -738,6 +757,50 @@ export default function ConsoleDashboard() {
     setTimeout(() => setStatusMessage(null), 4500);
   };
 
+  const handleUpdateProjectFromDetail = async (updatedProject: any) => {
+    try {
+      const res = await fetch(`/api/projects/${updatedProject.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: updatedProject.name,
+          settings: updatedProject.settings,
+          config_version: updatedProject.config_version,
+        }),
+      });
+      if (res.ok) {
+        await loadProjects();
+        setSelectedProjectForDetail(updatedProject);
+      }
+    } catch (err: any) {
+      console.error('Failed to update project from detail:', err);
+    }
+  };
+
+  const handleInstallMcpToProject = async (projectId: string, mcpPackage: any) => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}/servers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: mcpPackage.name,
+          namespace_prefix: mcpPackage.defaultPrefix,
+          transport: mcpPackage.transport,
+          url: mcpPackage.defaultUrl,
+          auth_type: 'none',
+          timeouts: { dial_ms: 5000, call_ms: 30000 },
+          enabled: true,
+        }),
+      });
+      if (res.ok) {
+        await loadProjects();
+        showBanner(`Mapped "${mcpPackage.name}" to project!`, 'success');
+      }
+    } catch (err: any) {
+      showBanner(err.message || 'Failed to install MCP to project', 'error');
+    }
+  };
+
   const activeProject = projects.find(p => p.id === selectedProjectId) || projects[0];
 
   // Presets
@@ -896,11 +959,11 @@ export default function ConsoleDashboard() {
         </div>
       )}
 
-      {/* Top Navbar */}
+      {/* Top Navbar Header */}
       <header style={{
         background: 'var(--bg-surface)',
         borderBottom: '1px solid var(--border-subtle)',
-        padding: '14px 28px',
+        padding: '12px 28px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
@@ -909,18 +972,23 @@ export default function ConsoleDashboard() {
         zIndex: 100,
         boxShadow: 'var(--card-shadow)'
       }}>
+        {/* Left: Brand Logo & Org */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <div style={{
-            width: '36px',
-            height: '36px',
-            borderRadius: 'var(--radius-sm)',
-            background: 'var(--primary)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '0 2px 8px rgba(79, 70, 229, 0.35)'
-          }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <div
+            onClick={() => setActiveTab('dashboard')}
+            style={{
+              width: '38px',
+              height: '38px',
+              borderRadius: 'var(--radius-sm)',
+              background: 'linear-gradient(135deg, #4f46e5, #0ea5e9)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 2px 10px rgba(79, 70, 229, 0.4)',
+              cursor: 'pointer'
+            }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
               <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
               <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
               <line x1="6" y1="6" x2="6.01" y2="6"></line>
@@ -929,48 +997,209 @@ export default function ConsoleDashboard() {
           </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span className="brand-font" style={{ fontWeight: 700, fontSize: '1.15rem', color: 'var(--text-main)' }}>AI CONSOLE</span>
-              <span className="badge badge-cyan" style={{ fontSize: '0.65rem' }}>Control Plane</span>
-              <span className="badge badge-emerald" style={{ fontSize: '0.65rem' }}>Phase 2 Ready</span>
+              <span
+                onClick={() => setActiveTab('dashboard')}
+                className="brand-font"
+                style={{ fontWeight: 800, fontSize: '1.2rem', color: 'var(--text-main)', cursor: 'pointer', letterSpacing: '-0.02em' }}
+              >
+                AI CONSOLE
+              </span>
+              <span className="badge badge-cyan" style={{ fontSize: '0.65rem', fontWeight: 600 }}>Control Plane</span>
+              <span className="badge badge-emerald" style={{ fontSize: '0.65rem', fontWeight: 600 }}>Production</span>
             </div>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+            <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
               Org: <strong style={{ color: 'var(--text-main)' }}>{org?.name || 'Default Enterprise'}</strong>
             </span>
           </div>
         </div>
 
-        {/* User Info & Actions */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        {/* Center: Global Search & Fleet Status Pill */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: '1', maxWidth: '580px', margin: '0 24px' }}>
+          <div style={{ position: 'relative', width: '100%' }}>
+            <input
+              type="text"
+              className="input-field"
+              placeholder="Search projects, gateways, endpoints, tools... (Ctrl+K)"
+              style={{
+                height: '36px',
+                fontSize: '0.82rem',
+                paddingLeft: '32px',
+                borderRadius: 'var(--radius-pill)',
+                background: 'var(--bg-surface-subtle)'
+              }}
+            />
+            <span style={{ position: 'absolute', left: '12px', top: '9px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              🔍
+            </span>
+          </div>
+
           <div style={{
             background: 'var(--bg-surface-subtle)',
             border: '1px solid var(--border-subtle)',
             borderRadius: 'var(--radius-pill)',
-            padding: '4px 12px 4px 6px',
+            padding: '5px 12px',
             display: 'flex',
             alignItems: 'center',
-            gap: '8px'
+            gap: '6px',
+            whiteSpace: 'nowrap',
+            fontSize: '0.74rem',
+            color: 'var(--text-muted)'
           }}>
-            <div style={{
-              width: '24px',
-              height: '24px',
+            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }}></span>
+            <strong style={{ color: 'var(--text-main)' }}>17 Gateways</strong> Online • DB Synced
+          </div>
+        </div>
+
+        {/* Right: Quick Actions & Profile Dropdown */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', position: 'relative' }}>
+          <button
+            onClick={() => setShowNewProjectModal(true)}
+            className="btn-primary"
+            style={{ fontSize: '0.8rem', padding: '6px 14px', height: '34px' }}
+          >
+            + Create Project
+          </button>
+
+          {/* Notification Bell */}
+          <button
+            onClick={() => showBanner('All services operational. Zero telemetry loss.', 'info')}
+            className="btn-secondary"
+            style={{
+              width: '34px',
+              height: '34px',
+              padding: 0,
               borderRadius: '50%',
-              background: 'var(--primary)',
-              color: 'var(--text-inverse)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: '0.75rem',
-              fontWeight: 700
-            }}>
-              {user.name.charAt(0)}
-            </div>
-            <span style={{ fontSize: '0.85rem', color: 'var(--text-main)' }}>{user.email}</span>
-            <span className="badge badge-indigo" style={{ fontSize: '0.65rem' }}>{user.role}</span>
-          </div>
-
-          <button id="logout-btn" onClick={handleLogout} className="btn-secondary" style={{ padding: '6px 12px' }}>
-            Sign Out
+              position: 'relative'
+            }}
+            title="Notifications"
+          >
+            <span style={{ fontSize: '1rem' }}>🔔</span>
+            <span style={{
+              position: 'absolute',
+              top: '4px',
+              right: '4px',
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              background: 'var(--primary)'
+            }}></span>
           </button>
+
+          {/* User Profile Avatar with Dropdown Toggle */}
+          <div style={{ position: 'relative' }}>
+            <div
+              onClick={() => setShowProfileDropdown(!showProfileDropdown)}
+              style={{
+                background: 'var(--bg-surface-subtle)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-pill)',
+                padding: '4px 12px 4px 6px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <div style={{
+                width: '26px',
+                height: '26px',
+                borderRadius: '50%',
+                background: 'var(--primary)',
+                color: 'var(--text-inverse)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '0.78rem',
+                fontWeight: 700
+              }}>
+                {user.name.charAt(0)}
+              </div>
+              <span style={{ fontSize: '0.82rem', color: 'var(--text-main)', fontWeight: 600 }}>{user.name}</span>
+              <span className="badge badge-indigo" style={{ fontSize: '0.65rem' }}>{user.role}</span>
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>▼</span>
+            </div>
+
+            {/* Profile Dropdown Menu */}
+            {showProfileDropdown && (
+              <div style={{
+                position: 'absolute',
+                top: '42px',
+                right: 0,
+                width: '260px',
+                background: 'var(--bg-surface)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-md)',
+                boxShadow: 'var(--card-hover-shadow)',
+                padding: '14px',
+                zIndex: 200,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px'
+              }}>
+                <div style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: '10px' }}>
+                  <strong style={{ fontSize: '0.88rem', color: 'var(--text-main)', display: 'block' }}>{user.name}</strong>
+                  <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>{user.email}</span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <button
+                    onClick={() => {
+                      setActiveTab('settings-console');
+                      setShowProfileDropdown(false);
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      padding: '6px 8px',
+                      textAlign: 'left',
+                      fontSize: '0.82rem',
+                      color: 'var(--text-main)',
+                      cursor: 'pointer',
+                      borderRadius: 'var(--radius-sm)'
+                    }}
+                  >
+                    🔑 Console Config (SSO)
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActiveTab('settings-deploy');
+                      setShowProfileDropdown(false);
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      padding: '6px 8px',
+                      textAlign: 'left',
+                      fontSize: '0.82rem',
+                      color: 'var(--text-main)',
+                      cursor: 'pointer',
+                      borderRadius: 'var(--radius-sm)'
+                    }}
+                  >
+                    🚀 Deployment Manifests
+                  </button>
+                </div>
+
+                <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '8px' }}>
+                  <button
+                    id="logout-btn"
+                    onClick={() => {
+                      setShowProfileDropdown(false);
+                      handleLogout();
+                    }}
+                    className="btn-secondary"
+                    style={{ width: '100%', fontSize: '0.8rem', padding: '6px 0', color: 'var(--danger)' }}
+                  >
+                    Sign Out
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
@@ -978,53 +1207,458 @@ export default function ConsoleDashboard() {
       <div style={{ flex: 1, display: 'flex' }}>
         {/* Sidebar Nav */}
         <nav style={{
-          width: '240px',
+          width: '260px',
           borderRight: '1px solid var(--border-subtle)',
           background: 'var(--bg-surface)',
-          padding: '24px 16px',
+          padding: '20px 14px',
           display: 'flex',
           flexDirection: 'column',
-          gap: '4px'
+          gap: '6px',
+          height: 'calc(100vh - 65px)',
+          position: 'sticky',
+          top: '65px',
+          overflowY: 'auto'
         }}>
-          {[
-            { id: 'projects', label: 'Projects & Virtual MCP', icon: '📁' },
-            { id: 'inbound-endpoints', label: 'Inbound & MCP Endpoints', icon: '🌐' },
-            { id: 'gateways', label: 'Gateway Fleet', icon: '⚡' },
-            { id: 'policies', label: 'Project Policies', icon: '🛡️' },
-            { id: 'certificates', label: 'Certificates & Security Hub', icon: '🔒' },
-            { id: 'mcp-servers', label: 'Downstream MCPs', icon: '🔌' },
-            { id: 'oauth', label: 'OAuth & Secrets', icon: '🔑' },
-            { id: 'logs', label: 'Logs & Telemetry', icon: '📊' },
-            { id: 'audit', label: 'Audit Trail', icon: '📜' },
-          ].map((item) => (
+          {/* 1. Dashboard */}
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '10px 14px',
+              borderRadius: 'var(--radius-sm)',
+              border: activeTab === 'dashboard' ? '1px solid var(--border-strong)' : '1px solid transparent',
+              background: activeTab === 'dashboard' ? 'var(--primary-subtle)' : 'transparent',
+              color: activeTab === 'dashboard' ? 'var(--primary-text)' : 'var(--text-main)',
+              fontWeight: activeTab === 'dashboard' ? 700 : 500,
+              cursor: 'pointer',
+              textAlign: 'left',
+              width: '100%',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '1.1rem' }}>📊</span>
+              <span style={{ fontSize: '0.88rem' }}>Dashboard</span>
+            </div>
+            <span className="badge badge-emerald" style={{ fontSize: '0.65rem' }}>Live</span>
+          </button>
+
+          {/* 2. Gateway */}
+          <button
+            onClick={() => setActiveTab('gateways')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '10px 14px',
+              borderRadius: 'var(--radius-sm)',
+              border: (activeTab === 'gateways' || activeTab === 'gateway-topology') ? '1px solid var(--border-strong)' : '1px solid transparent',
+              background: (activeTab === 'gateways' || activeTab === 'gateway-topology') ? 'var(--primary-subtle)' : 'transparent',
+              color: (activeTab === 'gateways' || activeTab === 'gateway-topology') ? 'var(--primary-text)' : 'var(--text-main)',
+              fontWeight: (activeTab === 'gateways' || activeTab === 'gateway-topology') ? 700 : 500,
+              cursor: 'pointer',
+              textAlign: 'left',
+              width: '100%',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '1.1rem' }}>⚡</span>
+              <span style={{ fontSize: '0.88rem' }}>Gateway</span>
+            </div>
+            <span className="badge badge-indigo" style={{ fontSize: '0.65rem' }}>
+              {gatewaysList.length || 17}
+            </span>
+          </button>
+
+          {/* 3. Policy (with Submenu: policy & policies) */}
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
             <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
+              onClick={() => setPolicyMenuOpen(!policyMenuOpen)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '10px',
-                padding: '9px 12px',
+                justifyContent: 'space-between',
+                padding: '10px 14px',
                 borderRadius: 'var(--radius-sm)',
-                border: activeTab === item.id ? '1px solid var(--border-strong)' : '1px solid transparent',
-                background: activeTab === item.id ? 'var(--primary-subtle)' : 'transparent',
-                color: activeTab === item.id ? 'var(--primary-text)' : 'var(--text-muted)',
-                fontWeight: activeTab === item.id ? 600 : 500,
+                border: '1px solid transparent',
+                background: (activeTab === 'policy' || activeTab === 'policies') ? 'var(--bg-surface-subtle)' : 'transparent',
+                color: (activeTab === 'policy' || activeTab === 'policies') ? 'var(--primary-text)' : 'var(--text-main)',
+                fontWeight: (activeTab === 'policy' || activeTab === 'policies') ? 700 : 500,
                 cursor: 'pointer',
                 textAlign: 'left',
                 width: '100%',
                 transition: 'all 0.15s ease'
               }}
             >
-              <span>{item.icon}</span>
-              <span style={{ fontSize: '0.88rem' }}>{item.label}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '1.1rem' }}>🛡️</span>
+                <span style={{ fontSize: '0.88rem' }}>Policy</span>
+              </div>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                {policyMenuOpen ? '▲' : '▼'}
+              </span>
             </button>
-          ))}
+
+            {/* Policy Submenus */}
+            {policyMenuOpen && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '28px', marginTop: '2px' }}>
+                <button
+                  onClick={() => setActiveTab('policy')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '8px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: activeTab === 'policy' ? '1px solid var(--border-strong)' : '1px solid transparent',
+                    background: activeTab === 'policy' ? 'var(--primary-subtle)' : 'transparent',
+                    color: activeTab === 'policy' ? 'var(--primary-text)' : 'var(--text-muted)',
+                    fontWeight: activeTab === 'policy' ? 700 : 500,
+                    fontSize: '0.82rem',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    width: '100%'
+                  }}
+                >
+                  <span>⚙️</span>
+                  <span>1. Policy Editor</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('policies')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '8px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: activeTab === 'policies' ? '1px solid var(--border-strong)' : '1px solid transparent',
+                    background: activeTab === 'policies' ? 'var(--primary-subtle)' : 'transparent',
+                    color: activeTab === 'policies' ? 'var(--primary-text)' : 'var(--text-muted)',
+                    fontWeight: activeTab === 'policies' ? 700 : 500,
+                    fontSize: '0.82rem',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    width: '100%'
+                  }}
+                >
+                  <span>📋</span>
+                  <span>2. Policies List</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* 4. MCPs (Marketplace) */}
+          <button
+            onClick={() => setActiveTab('mcp-marketplace')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '10px 14px',
+              borderRadius: 'var(--radius-sm)',
+              border: activeTab === 'mcp-marketplace' ? '1px solid var(--border-strong)' : '1px solid transparent',
+              background: activeTab === 'mcp-marketplace' ? 'var(--primary-subtle)' : 'transparent',
+              color: activeTab === 'mcp-marketplace' ? 'var(--primary-text)' : 'var(--text-main)',
+              fontWeight: activeTab === 'mcp-marketplace' ? 700 : 500,
+              cursor: 'pointer',
+              textAlign: 'left',
+              width: '100%',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '1.1rem' }}>🔌</span>
+              <span style={{ fontSize: '0.88rem' }}>MCPs</span>
+            </div>
+            <span className="badge badge-cyan" style={{ fontSize: '0.65rem' }}>Marketplace</span>
+          </button>
+
+          {/* 5. AI Agent */}
+          <button
+            onClick={() => setActiveTab('agents')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '10px 14px',
+              borderRadius: 'var(--radius-sm)',
+              border: activeTab === 'agents' ? '1px solid var(--border-strong)' : '1px solid transparent',
+              background: activeTab === 'agents' ? 'var(--primary-subtle)' : 'transparent',
+              color: activeTab === 'agents' ? 'var(--primary-text)' : 'var(--text-main)',
+              fontWeight: activeTab === 'agents' ? 700 : 500,
+              cursor: 'pointer',
+              textAlign: 'left',
+              width: '100%',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '1.1rem' }}>🤖</span>
+              <span style={{ fontSize: '0.88rem' }}>AI Agent</span>
+            </div>
+            <span className="badge badge-emerald" style={{ fontSize: '0.65rem' }}>12 Active</span>
+          </button>
+
+          {/* 6. Settings (with Submenus: deploy & console config) */}
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <button
+              onClick={() => setSettingsMenuOpen(!settingsMenuOpen)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '10px 14px',
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid transparent',
+                background: (activeTab === 'settings-deploy' || activeTab === 'settings-console') ? 'var(--bg-surface-subtle)' : 'transparent',
+                color: (activeTab === 'settings-deploy' || activeTab === 'settings-console') ? 'var(--primary-text)' : 'var(--text-main)',
+                fontWeight: (activeTab === 'settings-deploy' || activeTab === 'settings-console') ? 700 : 500,
+                cursor: 'pointer',
+                textAlign: 'left',
+                width: '100%',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '1.1rem' }}>⚙️</span>
+                <span style={{ fontSize: '0.88rem' }}>Settings</span>
+              </div>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                {settingsMenuOpen ? '▲' : '▼'}
+              </span>
+            </button>
+
+            {/* Settings Submenus */}
+            {settingsMenuOpen && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '28px', marginTop: '2px' }}>
+                <button
+                  onClick={() => setActiveTab('settings-deploy')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '8px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: activeTab === 'settings-deploy' ? '1px solid var(--border-strong)' : '1px solid transparent',
+                    background: activeTab === 'settings-deploy' ? 'var(--primary-subtle)' : 'transparent',
+                    color: activeTab === 'settings-deploy' ? 'var(--primary-text)' : 'var(--text-muted)',
+                    fontWeight: activeTab === 'settings-deploy' ? 700 : 500,
+                    fontSize: '0.82rem',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    width: '100%'
+                  }}
+                >
+                  <span>🚀</span>
+                  <span>1. Deploy</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('settings-console')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '8px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: activeTab === 'settings-console' ? '1px solid var(--border-strong)' : '1px solid transparent',
+                    background: activeTab === 'settings-console' ? 'var(--primary-subtle)' : 'transparent',
+                    color: activeTab === 'settings-console' ? 'var(--primary-text)' : 'var(--text-muted)',
+                    fontWeight: activeTab === 'settings-console' ? 700 : 500,
+                    fontSize: '0.82rem',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    width: '100%'
+                  }}
+                >
+                  <span>🔑</span>
+                  <span>2. Console Config</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Section Divider */}
+          <div style={{ borderTop: '1px solid var(--border-subtle)', margin: '10px 0 6px 0' }}></div>
+          <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', paddingLeft: '10px' }}>
+            Observability
+          </span>
+
+          {/* Logs */}
+          <button
+            onClick={() => setActiveTab('logs')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              padding: '8px 14px',
+              borderRadius: 'var(--radius-sm)',
+              border: activeTab === 'logs' ? '1px solid var(--border-strong)' : '1px solid transparent',
+              background: activeTab === 'logs' ? 'var(--primary-subtle)' : 'transparent',
+              color: activeTab === 'logs' ? 'var(--primary-text)' : 'var(--text-muted)',
+              fontWeight: activeTab === 'logs' ? 600 : 500,
+              fontSize: '0.84rem',
+              cursor: 'pointer',
+              textAlign: 'left',
+              width: '100%'
+            }}
+          >
+            <span>📊</span>
+            <span>Logs & Telemetry</span>
+          </button>
+
+          {/* Audit */}
+          <button
+            onClick={() => setActiveTab('audit')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              padding: '8px 14px',
+              borderRadius: 'var(--radius-sm)',
+              border: activeTab === 'audit' ? '1px solid var(--border-strong)' : '1px solid transparent',
+              background: activeTab === 'audit' ? 'var(--primary-subtle)' : 'transparent',
+              color: activeTab === 'audit' ? 'var(--primary-text)' : 'var(--text-muted)',
+              fontWeight: activeTab === 'audit' ? 600 : 500,
+              fontSize: '0.84rem',
+              cursor: 'pointer',
+              textAlign: 'left',
+              width: '100%'
+            }}
+          >
+            <span>📜</span>
+            <span>Audit Trail</span>
+          </button>
         </nav>
 
         {/* Content Body */}
         <main style={{ flex: 1, padding: '32px 36px', overflowY: 'auto', background: 'var(--bg-page)' }}>
-          {/* TAB 1: PROJECTS */}
+          {/* 3. DASHBOARD PAGE (Metrics, Graphs, All Projects Tiles) */}
+          {activeTab === 'dashboard' && (
+            <DashboardView
+              projects={projects}
+              gatewaysList={gatewaysList}
+              onSelectProject={(proj) => {
+                setSelectedProjectForDetail(proj as Project);
+                setActiveTab('project-detail');
+              }}
+              onCreateProject={() => setShowNewProjectModal(true)}
+              onNavigateToTab={(tabId) => setActiveTab(tabId)}
+            />
+          )}
+
+          {/* 3.1 PROJECT DETAIL CONFIGURATION PAGE */}
+          {activeTab === 'project-detail' && (
+            <ProjectDetailView
+              project={selectedProjectForDetail || projects[0] || {
+                id: 'default',
+                name: 'Default Project',
+                slug: 'default',
+                status: 'active',
+                settings: {},
+                config_version: 1,
+                created_at: new Date().toISOString()
+              }}
+              gatewaysList={gatewaysList}
+              onBack={() => setActiveTab('dashboard')}
+              onUpdateProject={handleUpdateProjectFromDetail}
+              showBanner={showBanner}
+            />
+          )}
+
+          {/* 4. GATEWAY FLEET PAGE (Shows all AI Gateways and their state + click to view logs) */}
+          {activeTab === 'gateways' && (
+            <GatewayFleetView
+              gatewaysList={gatewaysList}
+              logsList={logs}
+              onInspectGateway={(gw) => {
+                setSelectedGatewayForTopology(gw);
+                setActiveTab('gateway-topology');
+              }}
+              onOpenLogsForGateway={(gwId, gwName) => {
+                setLogFilterSearch(gwName);
+                setActiveTab('logs');
+              }}
+              onRegisterGateway={() => setShowNewGatewayModal(true)}
+              onNavigateToDeploy={(gwId, gwKey) => {
+                setDeploySelectedGatewayId(gwId);
+                setDeploySelectedGatewayKey(gwKey);
+                setActiveTab('settings-deploy');
+              }}
+              showBanner={showBanner}
+            />
+          )}
+
+          {/* 4.1 SPECIFIC AI GATEWAY GRAPHIC TOPOLOGY PAGE */}
+          {activeTab === 'gateway-topology' && (
+            <GatewayGraphicTopologyView
+              gateway={selectedGatewayForTopology || gatewaysList[0] || { id: 'default', name: 'gateway-default-01', status: 'active', version: 'v1.0.0' }}
+              projects={projects}
+              onBack={() => setActiveTab('gateways')}
+              onSelectProject={(proj) => {
+                setSelectedProjectForDetail(proj);
+                setActiveTab('project-detail');
+              }}
+              showBanner={showBanner}
+            />
+          )}
+
+          {/* 4 (Submenu 1). POLICY EDITOR PAGE */}
+          {activeTab === 'policy' && (
+            <PolicyEditorView
+              projects={projects}
+              gatewaysList={gatewaysList}
+              onNavigateToPoliciesList={() => setActiveTab('policies')}
+              showBanner={showBanner}
+            />
+          )}
+
+          {/* 4 (Submenu 2). POLICIES LIST PAGE */}
+          {activeTab === 'policies' && (
+            <PoliciesListView
+              onNavigateToPolicyEditor={() => setActiveTab('policy')}
+              showBanner={showBanner}
+            />
+          )}
+
+          {/* 5. MCP MARKETPLACE PAGE */}
+          {activeTab === 'mcp-marketplace' && (
+            <MCPMarketplaceView
+              projects={projects}
+              onInstallToProject={handleInstallMcpToProject}
+              showBanner={showBanner}
+            />
+          )}
+
+          {/* 6. AGENTS REGISTRY PAGE */}
+          {activeTab === 'agents' && (
+            <AgentsRegistryView
+              gatewaysList={gatewaysList}
+              showBanner={showBanner}
+            />
+          )}
+
+          {/* 7.1 SETTINGS SUBMENU: DEPLOY */}
+          {activeTab === 'settings-deploy' && (
+            <DeploySettingsView
+              gatewaysList={gatewaysList}
+              initialGatewayId={deploySelectedGatewayId}
+              initialGatewayKey={deploySelectedGatewayKey}
+              showBanner={showBanner}
+            />
+          )}
+
+          {/* 7.2 SETTINGS SUBMENU: CONSOLE CONFIG (SSO) */}
+          {activeTab === 'settings-console' && (
+            <ConsoleConfigView
+              showBanner={showBanner}
+            />
+          )}
           {activeTab === 'projects' && (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
