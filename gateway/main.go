@@ -118,6 +118,9 @@ func main() {
 	if consoleURL == "" {
 		consoleURL = "http://console:3000"
 	}
+	consoleURL = strings.TrimRight(consoleURL, "/")
+	consoleURL = strings.TrimSuffix(consoleURL, "/api/v1")
+	consoleURL = strings.TrimRight(consoleURL, "/")
 
 	gatewaySecret := os.Getenv("AI_GATEWAY_KEY")
 	if gatewaySecret == "" {
@@ -715,6 +718,10 @@ func (g *Gateway) authenticateWithConsole() error {
 }
 
 func (g *Gateway) getToken() (string, error) {
+	if strings.HasPrefix(g.gatewaySecret, "aigw_live_") || strings.HasPrefix(g.gatewaySecret, "gwsec_") {
+		return g.gatewaySecret, nil
+	}
+
 	g.mu.RLock()
 	token := g.token
 	expiry := g.tokenExpiry

@@ -367,10 +367,13 @@ export default function ConsoleDashboard() {
   const renderDeploySnippets = (secret: string) => {
     const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
     const consoleUrl = `${origin}/api/v1`;
+    const dockerConsoleUrl = (origin.includes('localhost') || origin.includes('127.0.0.1'))
+      ? origin.replace(/localhost|127\.0\.0\.1/, 'host.docker.internal') + '/api/v1'
+      : consoleUrl;
 
     const snippets: Record<'helm' | 'docker' | 'linux' | 'windows', string> = {
       helm: `helm install ai-gateway ./charts/ai-gateway \\\n  --set auth.key="${secret}" \\\n  --set gateway.consoleUrl="${consoleUrl}"`,
-      docker: `docker run -d --name ai-gateway \\\n  -p 8080:8080 \\\n  -e AI_GATEWAY_KEY="${secret}" \\\n  -e CONSOLE_URL="${consoleUrl}" \\\n  ghcr.io/my-org/ai-gateway:1.0.0`,
+      docker: `# Build image locally (if needed):\n# docker build -t ai-gateway:1.0.0 -f deploy/docker/Dockerfile.gateway .\n\ndocker run -d --name ai-gateway \\\n  -p 8080:8080 \\\n  -e AI_GATEWAY_KEY="${secret}" \\\n  -e CONSOLE_URL="${dockerConsoleUrl}" \\\n  ai-gateway:1.0.0`,
       linux: `AI_GATEWAY_KEY="${secret}" \\\nCONSOLE_URL="${consoleUrl}" \\\nsudo ./deployments/standalone/install-linux.sh`,
       windows: `powershell -ExecutionPolicy Bypass -File .\\deployments\\standalone\\install-windows.ps1 \`\n  -GatewayKey "${secret}" \`\n  -ConsoleUrl "${consoleUrl}"`
     };
