@@ -30,6 +30,20 @@ export default function DeploySettingsView({
   const [ingestUrl, setIngestUrl] = useState<string>('http://localhost:8082');
   const [gatewayPort, setGatewayPort] = useState<number>(8080);
 
+  // Telemetry & Logging Sink Selection (Deployment-Time Option)
+  const [telemetrySink, setTelemetrySink] = useState<'clickhouse' | 'opensearch' | 's3' | 'otlp'>('clickhouse');
+  const [clickhouseUrl, setClickhouseUrl] = useState<string>('http://clickhouse:8123');
+  const [clickhouseDb, setClickhouseDb] = useState<string>('gateway_telemetry');
+  const [opensearchUrl, setOpensearchUrl] = useState<string>('https://search-my-corp.us-east-1.es.amazonaws.com');
+  const [opensearchIndex, setOpensearchIndex] = useState<string>('ai-gateway-telemetry');
+  const [opensearchAuthMode, setOpensearchAuthMode] = useState<'iam_role' | 'basic'>('iam_role');
+  const [s3Bucket, setS3Bucket] = useState<string>('my-corp-ai-audit-logs');
+  const [s3Region, setS3Region] = useState<string>('us-east-1');
+  const [s3Prefix, setS3Prefix] = useState<string>('telemetry/v1/');
+  const [s3Format, setS3Format] = useState<'parquet' | 'json.gz'>('parquet');
+  const [otlpEndpoint, setOtlpEndpoint] = useState<string>('http://jaeger-collector:4318/v1/traces');
+  const [otlpProtocol, setOtlpProtocol] = useState<'grpc' | 'http/protobuf'>('grpc');
+
   // Active Config Tab
   const [activeConfigTab, setActiveConfigTab] = useState<'compose' | 'helm' | 'cli' | 'env'>('compose');
 
@@ -50,7 +64,6 @@ export default function DeploySettingsView({
   // When user selects a different gateway from the fleet dropdown
   const handleSelectGateway = (gwId: string) => {
     setSelectedGatewayId(gwId);
-    // Pre-populate known key for that gateway or preserve user-supplied
     if (gwId === 'gateway-default-01') {
       setUserSuppliedKey('dev-gateway-secret');
     }
@@ -118,7 +131,81 @@ export default function DeploySettingsView({
     }
   };
 
-  // Dynamically Generated Configurations (Reactive to userSuppliedKey and selectedGatewayId)
+  // Sink-specific Environment snippet for Docker Compose and .env
+  let sinkEnvCompose = '';
+  let sinkEnvFile = '';
+  let sinkHelmArgs = '';
+  let sinkCliArgs = '';
+
+  if (telemetrySink === 'clickhouse') {
+    sinkEnvCompose = `      TELEMETRY_SINK: "clickhouse"
+      CLICKHOUSE_URL: "${clickhouseUrl}"
+      CLICKHOUSE_DB: "${clickhouseDb}"`;
+    sinkEnvFile = `TELEMETRY_SINK=clickhouse
+CLICKHOUSE_URL=${clickhouseUrl}
+CLICKHOUSE_DB=${clickhouseDb}`;
+    sinkHelmArgs = `  --set telemetry.sink="clickhouse" \\
+  --set telemetry.clickhouse.url="${clickhouseUrl}"`;
+    sinkCliArgs = `  --telemetry-sink="clickhouse" \\
+  --clickhouse-url="${clickhouseUrl}"`;
+  } else if (telemetrySink === 'opensearch') {
+    sinkEnvCompose = `      TELEMETRY_SINK: "opensearch"
+      OPENSEARCH_URL: "${opensearchUrl}"
+      OPENSEARCH_INDEX: "${opensearchIndex}"
+      AWS_REGION: "${s3Region}"
+      OPENSEARCH_AUTH_MODE: "${opensearchAuthMode}"`;
+    sinkEnvFile = `TELEMETRY_SINK=opensearch
+OPENSEARCH_URL=${opensearchUrl}
+OPENSEARCH_INDEX=${opensearchIndex}
+AWS_REGION=${s3Region}
+OPENSEARCH_AUTH_MODE=${opensearchAuthMode}
+# Note: In AWS EKS, attach IRSA IAM role with 'es:ESHttp*' permissions`;
+    sinkHelmArgs = `  --set telemetry.sink="opensearch" \\
+  --set telemetry.opensearch.endpoint="${opensearchUrl}" \\
+  --set telemetry.opensearch.index="${opensearchIndex}"`;
+    sinkCliArgs = `  --telemetry-sink="opensearch" \\
+  --opensearch-url="${opensearchUrl}" \\
+  --opensearch-index="${opensearchIndex}"`;
+  } else if (telemetrySink === 's3') {
+    sinkEnvCompose = `      TELEMETRY_SINK: "s3"
+      S3_BUCKET: "${s3Bucket}"
+      AWS_REGION: "${s3Region}"
+      S3_PREFIX: "${s3Prefix}"
+      S3_OUTPUT_FORMAT: "${s3Format}"
+      S3_FLUSH_INTERVAL: "60s"
+      S3_FLUSH_MAX_BYTES: "10485760"`;
+    sinkEnvFile = `TELEMETRY_SINK=s3
+S3_BUCKET=${s3Bucket}
+AWS_REGION=${s3Region}
+S3_PREFIX=${s3Prefix}
+S3_OUTPUT_FORMAT=${s3Format}
+S3_FLUSH_INTERVAL=60s
+# Batched into compressed Parquet/JSONL queryable directly via AWS Athena or Snowflake`;
+    sinkHelmArgs = `  --set telemetry.sink="s3" \\
+  --set telemetry.s3.bucket="${s3Bucket}" \\
+  --set telemetry.s3.region="${s3Region}" \\
+  --set telemetry.s3.prefix="${s3Prefix}" \\
+  --set telemetry.s3.format="${s3Format}"`;
+    sinkCliArgs = `  --telemetry-sink="s3" \\
+  --s3-bucket="${s3Bucket}" \\
+  --aws-region="${s3Region}" \\
+  --s3-prefix="${s3Prefix}" \\
+  --s3-format="${s3Format}"`;
+  } else if (telemetrySink === 'otlp') {
+    sinkEnvCompose = `      TELEMETRY_SINK: "otlp"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${otlpEndpoint}"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "${otlpProtocol}"`;
+    sinkEnvFile = `TELEMETRY_SINK=otlp
+OTEL_EXPORTER_OTLP_ENDPOINT=${otlpEndpoint}
+OTEL_EXPORTER_OTLP_PROTOCOL=${otlpProtocol}
+# Ships standard OTLP protobuf spans to Datadog, Dynatrace, New Relic, or Tempo`;
+    sinkHelmArgs = `  --set telemetry.sink="otlp" \\
+  --set telemetry.otlpEndpoint="${otlpEndpoint}"`;
+    sinkCliArgs = `  --telemetry-sink="otlp" \\
+  --otlp-endpoint="${otlpEndpoint}"`;
+  }
+
+  // Dynamically Generated Configurations (Reactive to userSuppliedKey, selectedGatewayId, and telemetrySink)
   const dockerComposeSnippet = `version: '3.8'
 
 services:
@@ -135,6 +222,7 @@ services:
       GATEWAY_ID: "${selectedGatewayId}"
       GATEWAY_SECRET: "${userSuppliedKey}"
       SPOOL_FILE_PATH: "/tmp/gateway_events.spool"
+${sinkEnvCompose}
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:${gatewayPort}/healthz || exit 1"]
       interval: 5s
@@ -149,6 +237,7 @@ services:
   --set gateway.consoleUrl="${consoleUrl}" \\
   --set gateway.ingestUrl="${ingestUrl}" \\
   --set gateway.port=${gatewayPort} \\
+${sinkHelmArgs} \\
   --wait`;
 
   const binaryLinuxCommand = `./bin/gateway \\
@@ -156,24 +245,29 @@ services:
   --secret="${userSuppliedKey}" \\
   --console-url="${consoleUrl}" \\
   --ingest-url="${ingestUrl}" \\
-  --port=${gatewayPort}`;
+  --port=${gatewayPort} \\
+${sinkCliArgs}`;
 
-  const binaryWindowsCommand = `.\\gateway.exe \\
-  --id="${selectedGatewayId}" \\
-  --secret="${userSuppliedKey}" \\
-  --console-url="${consoleUrl}" \\
-  --ingest-url="${ingestUrl}" \\
-  --port=${gatewayPort}`;
+  const binaryWindowsCommand = `.\\gateway.exe \`
+  --id="${selectedGatewayId}" \`
+  --secret="${userSuppliedKey}" \`
+  --console-url="${consoleUrl}" \`
+  --ingest-url="${ingestUrl}" \`
+  --port=${gatewayPort} \`
+${sinkCliArgs.replace(/\\/g, '`')}`;
 
   const envFileSnippet = `# AI Gateway Environment Configuration
-# Driven from AI Gateway Page & User-Supplied Key
+# Driven from AI Gateway Page, Key & Telemetry Storage Choice
 GATEWAY_ID=${selectedGatewayId}
 GATEWAY_SECRET=${userSuppliedKey}
 CONSOLE_URL=${consoleUrl}
 INGEST_URL=${ingestUrl}
 GATEWAY_PORT=${gatewayPort}
 ALLOW_LOCAL_EGRESS=true
-SPOOL_FILE_PATH=/tmp/gateway_events.spool`;
+SPOOL_FILE_PATH=/tmp/gateway_events.spool
+
+# Telemetry & Audit Log Storage Sink Configuration
+${sinkEnvFile}`;
 
   const curlRegisterCommand = `curl -X POST "${consoleUrl}/api/gateway/v1/auth" \\
   -H "Content-Type: application/json" \\
@@ -387,12 +481,311 @@ SPOOL_FILE_PATH=/tmp/gateway_events.spool`;
         </div>
       </div>
 
+      {/* 2. TELEMETRY & AUDIT LOG STORAGE SINK SELECTION */}
+      <div className="glass-panel" style={{ padding: '26px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+          <div>
+            <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-main)' }}>
+              2. Telemetry & Audit Log Storage Sink Selection
+            </h3>
+            <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+              Choose your target telemetry backend at deployment time. The configuration manifests below adapt automatically.
+            </span>
+          </div>
+
+          <span className="badge badge-indigo" style={{ fontSize: '0.72rem' }}>
+            Pluggable Storage Architecture
+          </span>
+        </div>
+
+        {/* 4 Interactive Storage Option Cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px' }}>
+          {/* Option 1: ClickHouse */}
+          <div
+            onClick={() => setTelemetrySink('clickhouse')}
+            style={{
+              padding: '16px',
+              borderRadius: 'var(--radius-sm)',
+              border: `2px solid ${telemetrySink === 'clickhouse' ? 'var(--primary)' : 'var(--border-subtle)'}`,
+              background: telemetrySink === 'clickhouse' ? 'rgba(99, 102, 241, 0.08)' : 'var(--bg-surface-subtle)',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: '1.4rem' }}>⚡</span>
+              <span className="badge badge-emerald" style={{ fontSize: '0.68rem' }}>Default & Fast</span>
+            </div>
+            <strong style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>ClickHouse OLAP</strong>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.4 }}>
+              Sub-second queries, 85-90% columnar compression, and real-time FinOps aggregations over billions of AI spans.
+            </p>
+          </div>
+
+          {/* Option 2: AWS OpenSearch */}
+          <div
+            onClick={() => setTelemetrySink('opensearch')}
+            style={{
+              padding: '16px',
+              borderRadius: 'var(--radius-sm)',
+              border: `2px solid ${telemetrySink === 'opensearch' ? 'var(--primary)' : 'var(--border-subtle)'}`,
+              background: telemetrySink === 'opensearch' ? 'rgba(99, 102, 241, 0.08)' : 'var(--bg-surface-subtle)',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: '1.4rem' }}>🔍</span>
+              <span className="badge badge-indigo" style={{ fontSize: '0.68rem' }}>AWS Managed</span>
+            </div>
+            <strong style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>AWS OpenSearch</strong>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.4 }}>
+              Native text indexing for LLM prompts/responses, IAM SigV4 auth, and built-in OpenSearch / Kibana dashboards.
+            </p>
+          </div>
+
+          {/* Option 3: AWS S3 Data Lake */}
+          <div
+            onClick={() => setTelemetrySink('s3')}
+            style={{
+              padding: '16px',
+              borderRadius: 'var(--radius-sm)',
+              border: `2px solid ${telemetrySink === 's3' ? 'var(--primary)' : 'var(--border-subtle)'}`,
+              background: telemetrySink === 's3' ? 'rgba(99, 102, 241, 0.08)' : 'var(--bg-surface-subtle)',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: '1.4rem' }}>🪣</span>
+              <span className="badge badge-amber" style={{ fontSize: '0.68rem' }}>Lowest Cost</span>
+            </div>
+            <strong style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>AWS S3 Data Lake</strong>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.4 }}>
+              Direct micro-batching to S3 Parquet/JSONL. Zero dedicated database compute costs; queryable via AWS Athena or Snowflake.
+            </p>
+          </div>
+
+          {/* Option 4: OpenTelemetry OTLP */}
+          <div
+            onClick={() => setTelemetrySink('otlp')}
+            style={{
+              padding: '16px',
+              borderRadius: 'var(--radius-sm)',
+              border: `2px solid ${telemetrySink === 'otlp' ? 'var(--primary)' : 'var(--border-subtle)'}`,
+              background: telemetrySink === 'otlp' ? 'rgba(99, 102, 241, 0.08)' : 'var(--bg-surface-subtle)',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: '1.4rem' }}>📡</span>
+              <span className="badge badge-blue" style={{ fontSize: '0.68rem' }}>Vendor Neutral</span>
+            </div>
+            <strong style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>OpenTelemetry (OTLP)</strong>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.4 }}>
+              Standard OTLP protobuf stream forwarded to enterprise collectors (Datadog, Dynatrace, New Relic, Jaeger, Tempo).
+            </p>
+          </div>
+        </div>
+
+        {/* Selected Sink Dynamic Parameters Panel */}
+        <div style={{
+          background: 'var(--bg-surface-subtle)',
+          borderRadius: 'var(--radius-sm)',
+          border: '1px solid var(--border-subtle)',
+          padding: '16px 20px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '14px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '0.86rem', fontWeight: 700, color: 'var(--text-main)' }}>
+              ⚙️ {telemetrySink === 'clickhouse' ? 'ClickHouse Connection Settings' : telemetrySink === 'opensearch' ? 'AWS OpenSearch Domain & IAM Settings' : telemetrySink === 's3' ? 'AWS S3 Bucket & Partitioning Settings' : 'OpenTelemetry OTLP Collector Settings'}
+            </span>
+            <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+              Injected into Gateway Environment & Manifests
+            </span>
+          </div>
+
+          {telemetrySink === 'clickhouse' && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>
+                  ClickHouse Server URL (HTTP/Native)
+                </label>
+                <input
+                  type="text"
+                  className="input-field font-mono"
+                  value={clickhouseUrl}
+                  onChange={(e) => setClickhouseUrl(e.target.value)}
+                  style={{ height: '36px', fontSize: '0.8rem' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>
+                  ClickHouse Database Name
+                </label>
+                <input
+                  type="text"
+                  className="input-field font-mono"
+                  value={clickhouseDb}
+                  onChange={(e) => setClickhouseDb(e.target.value)}
+                  style={{ height: '36px', fontSize: '0.8rem' }}
+                />
+              </div>
+            </div>
+          )}
+
+          {telemetrySink === 'opensearch' && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>
+                  AWS OpenSearch Domain Endpoint
+                </label>
+                <input
+                  type="text"
+                  className="input-field font-mono"
+                  value={opensearchUrl}
+                  onChange={(e) => setOpensearchUrl(e.target.value)}
+                  style={{ height: '36px', fontSize: '0.8rem' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>
+                  Index Name / Prefix
+                </label>
+                <input
+                  type="text"
+                  className="input-field font-mono"
+                  value={opensearchIndex}
+                  onChange={(e) => setOpensearchIndex(e.target.value)}
+                  style={{ height: '36px', fontSize: '0.8rem' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>
+                  Authentication Mode
+                </label>
+                <select
+                  className="input-field"
+                  value={opensearchAuthMode}
+                  onChange={(e) => setOpensearchAuthMode(e.target.value as any)}
+                  style={{ height: '36px', fontSize: '0.8rem' }}
+                >
+                  <option value="iam_role">AWS IAM Role (IRSA / Pod Identity)</option>
+                  <option value="basic">HTTP Basic Authentication</option>
+                </select>
+              </div>
+            </div>
+          )}
+
+          {telemetrySink === 's3' && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>
+                  S3 Bucket Name
+                </label>
+                <input
+                  type="text"
+                  className="input-field font-mono"
+                  value={s3Bucket}
+                  onChange={(e) => setS3Bucket(e.target.value)}
+                  style={{ height: '36px', fontSize: '0.8rem' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>
+                  AWS Region
+                </label>
+                <input
+                  type="text"
+                  className="input-field font-mono"
+                  value={s3Region}
+                  onChange={(e) => setS3Region(e.target.value)}
+                  style={{ height: '36px', fontSize: '0.8rem' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>
+                  S3 Partition Prefix
+                </label>
+                <input
+                  type="text"
+                  className="input-field font-mono"
+                  value={s3Prefix}
+                  onChange={(e) => setS3Prefix(e.target.value)}
+                  style={{ height: '36px', fontSize: '0.8rem' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>
+                  File Format
+                </label>
+                <select
+                  className="input-field"
+                  value={s3Format}
+                  onChange={(e) => setS3Format(e.target.value as any)}
+                  style={{ height: '36px', fontSize: '0.8rem' }}
+                >
+                  <option value="parquet">Apache Parquet (Snappy Compressed)</option>
+                  <option value="json.gz">JSONL (Gzip Compressed)</option>
+                </select>
+              </div>
+            </div>
+          )}
+
+          {telemetrySink === 'otlp' && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>
+                  OTLP Collector Endpoint
+                </label>
+                <input
+                  type="text"
+                  className="input-field font-mono"
+                  value={otlpEndpoint}
+                  onChange={(e) => setOtlpEndpoint(e.target.value)}
+                  style={{ height: '36px', fontSize: '0.8rem' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>
+                  Protocol
+                </label>
+                <select
+                  className="input-field"
+                  value={otlpProtocol}
+                  onChange={(e) => setOtlpProtocol(e.target.value as any)}
+                  style={{ height: '36px', fontSize: '0.8rem' }}
+                >
+                  <option value="grpc">gRPC (Port 4317)</option>
+                  <option value="http/protobuf">HTTP / Protobuf (Port 4318)</option>
+                </select>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* DYNAMICALLY GENERATED CONFIGURATIONS */}
       <div className="glass-panel" style={{ padding: '26px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
           <div>
             <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-main)' }}>
-              2. Generated Deployment Configurations
+              3. Generated Deployment Configurations
             </h3>
             <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
               Configuration code dynamically rendered with your user-supplied key: <strong className="font-mono" style={{ color: 'var(--primary-text)' }}>{userSuppliedKey || 'dev-gateway-secret'}</strong>
