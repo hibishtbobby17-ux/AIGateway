@@ -233,6 +233,27 @@ export async function initDatabase(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_gateway_logs_tool ON gateway_logs (tool);
     `);
 
+    // 14. LLM Gateways (Multi-Cloud Universal LLM Proxy)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS llm_gateways (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        slug VARCHAR(100) UNIQUE NOT NULL,
+        status VARCHAR(50) NOT NULL DEFAULT 'active',
+        inbound_auth JSONB NOT NULL DEFAULT '{"mode": "api_key"}'::jsonb,
+        primary_backend JSONB NOT NULL DEFAULT '{}'::jsonb,
+        fallback_backends JSONB NOT NULL DEFAULT '[]'::jsonb,
+        routing_strategy VARCHAR(50) NOT NULL DEFAULT 'priority_fallback',
+        guardrails JSONB NOT NULL DEFAULT '{}'::jsonb,
+        metrics JSONB NOT NULL DEFAULT '{"tokens_processed": 0, "requests_total": 0}'::jsonb,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_llm_gateways_org ON llm_gateways (org_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_llm_gateways_slug ON llm_gateways (slug);
+    `);
+
     // Seed default organization if empty
     const orgRes = await client.query('SELECT id FROM organizations LIMIT 1');
     let defaultOrgId: string;
@@ -278,6 +299,126 @@ export async function initDatabase(): Promise<void> {
         INSERT INTO gateway_instances (name, secret_hash, status, version)
         VALUES ('gateway-default-01', $1, 'registered', '1.0.0')
       `, [secretHash]);
+    }
+
+    // Seed default LLM gateways if empty
+    const llmRes = await client.query('SELECT id FROM llm_gateways LIMIT 1');
+    if (llmRes.rows.length === 0) {
+      await client.query(`
+        INSERT INTO llm_gateways (org_id, name, slug, status, inbound_auth, primary_backend, fallback_backends, routing_strategy, guardrails, metrics)
+        VALUES 
+        (
+          $1, 
+          'Enterprise Multi-Cloud Chat Gateway', 
+          'enterprise-chat', 
+          'active',
+          '{
+            "mode": "oauth_pkce",
+            "issuer": "https://auth.enterprise.okta.com/oauth2/default",
+            "client_id": "0oa9k18lq2AbCdEf0h7",
+            "audience": "https://gateway.corp/llm/enterprise-chat",
+            "scopes": ["llm:chat", "llm:stream"],
+            "jwks_uri": "https://auth.enterprise.okta.com/oauth2/default/v1/keys",
+            "allow_client_credentials": true,
+            "allow_api_key": true,
+            "api_key": "sec_llm_live_98a76bc543210fe"
+          }'::jsonb,
+          '{
+            "provider": "azure_openai",
+            "endpoint": "https://corp-ai-eastus2.openai.azure.com",
+            "deployment_name": "gpt-4o-prod",
+            "api_version": "2024-08-01-preview",
+            "model_alias": "gpt-4o",
+            "api_key": "••••••••••••••••••••••••••••••••",
+            "region": "eastus2",
+            "weight": 100
+          }'::jsonb,
+          '[
+            {
+              "provider": "aws_bedrock",
+              "region": "us-east-1",
+              "model_id": "anthropic.claude-3-5-sonnet-20240620-v1:0",
+              "model_alias": "claude-3-5-sonnet",
+              "access_key_id": "AKIA••••••••••••••••",
+              "secret_access_key": "••••••••••••••••••••••••••••••••",
+              "priority": 1,
+              "trigger_on_status": [429, 500, 503]
+            },
+            {
+              "provider": "openai_direct",
+              "model": "gpt-4o",
+              "model_alias": "gpt-4o",
+              "api_key": "sk-proj-••••••••••••••••••••••••••••••••",
+              "organization_id": "org-corp-enterprise",
+              "priority": 2,
+              "trigger_on_status": [429, 500, 503]
+            }
+          ]'::jsonb,
+          'priority_fallback',
+          '{
+            "rate_limits": { "requests_per_minute": 1200, "tokens_per_minute": 350000 },
+            "pii_masking": true,
+            "prompt_injection_detection": true,
+            "max_tokens_ceiling": 4096
+          }'::jsonb,
+          '{
+            "tokens_processed": 1428500,
+            "requests_total": 4210,
+            "prompt_tokens": 890200,
+            "completion_tokens": 538300,
+            "fallback_events": 14,
+            "avg_latency_ms": 285
+          }'::jsonb
+        ),
+        (
+          $1, 
+          'Code & Reasoning Intelligence Gateway', 
+          'code-intelligence', 
+          'active',
+          '{
+            "mode": "api_key",
+            "allow_client_credentials": true,
+            "issuer": "https://auth.enterprise.okta.com/oauth2/default",
+            "client_id": "0oa7x19mk0ZyXwVu1j9",
+            "api_key": "sec_llm_live_44f55e66d77c88b9"
+          }'::jsonb,
+          '{
+            "provider": "anthropic_direct",
+            "model": "claude-3-5-sonnet-latest",
+            "model_alias": "claude-3.5-sonnet",
+            "api_key": "sk-ant-api03-••••••••••••••••••••••••••••••••",
+            "api_version": "2023-06-01",
+            "weight": 100
+          }'::jsonb,
+          '[
+            {
+              "provider": "azure_openai",
+              "endpoint": "https://corp-ai-westus.openai.azure.com",
+              "deployment_name": "gpt-4o-mini-prod",
+              "model_alias": "gpt-4o-mini",
+              "api_version": "2024-08-01-preview",
+              "api_key": "••••••••••••••••••••••••••••••••",
+              "priority": 1,
+              "trigger_on_status": [429, 500, 503]
+            }
+          ]'::jsonb,
+          'lowest_latency',
+          '{
+            "rate_limits": { "requests_per_minute": 3000, "tokens_per_minute": 800000 },
+            "pii_masking": false,
+            "prompt_injection_detection": true,
+            "max_tokens_ceiling": 8192
+          }'::jsonb,
+          '{
+            "tokens_processed": 3892000,
+            "requests_total": 11450,
+            "prompt_tokens": 2100000,
+            "completion_tokens": 1792000,
+            "fallback_events": 3,
+            "avg_latency_ms": 194
+          }'::jsonb
+        )
+      `, [defaultOrgId]);
     }
 
     await client.query('COMMIT');

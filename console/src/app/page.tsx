@@ -15,6 +15,7 @@ import MCPMarketplaceView from './components/MCPMarketplaceView';
 import AgentsRegistryView from './components/AgentsRegistryView';
 import DeploySettingsView from './components/DeploySettingsView';
 import ConsoleConfigView from './components/ConsoleConfigView';
+import LLMGatewayView from './components/LLMGatewayView';
 
 interface User {
   userId: string;
@@ -1404,7 +1405,33 @@ export default function ConsoleDashboard() {
             <span className="badge badge-emerald" style={{ fontSize: '0.65rem' }}>12 Active</span>
           </button>
 
-          {/* 6. Settings (with Submenus: deploy & console config) */}
+          {/* 6. LLM Gateway */}
+          <button
+            onClick={() => setActiveTab('llm-gateway')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '10px 14px',
+              borderRadius: 'var(--radius-sm)',
+              border: activeTab === 'llm-gateway' ? '1px solid var(--border-strong)' : '1px solid transparent',
+              background: activeTab === 'llm-gateway' ? 'var(--primary-subtle)' : 'transparent',
+              color: activeTab === 'llm-gateway' ? 'var(--primary-text)' : 'var(--text-main)',
+              fontWeight: activeTab === 'llm-gateway' ? 700 : 500,
+              cursor: 'pointer',
+              textAlign: 'left',
+              width: '100%',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '1.1rem' }}>🔮</span>
+              <span style={{ fontSize: '0.88rem' }}>LLM Gateway</span>
+            </div>
+            <span className="badge badge-indigo" style={{ fontSize: '0.65rem' }}>Multi-Cloud</span>
+          </button>
+
+          {/* 7. Settings (with Submenus: deploy & console config) */}
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <button
               onClick={() => setSettingsMenuOpen(!settingsMenuOpen)}
@@ -1639,6 +1666,13 @@ export default function ConsoleDashboard() {
           {activeTab === 'agents' && (
             <AgentsRegistryView
               gatewaysList={gatewaysList}
+              showBanner={showBanner}
+            />
+          )}
+
+          {/* 6.1 LLM GATEWAY PAGE */}
+          {activeTab === 'llm-gateway' && (
+            <LLMGatewayView
               showBanner={showBanner}
             />
           )}

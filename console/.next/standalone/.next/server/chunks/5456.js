@@ -1,4 +1,4 @@
-"use strict";exports.id=3380,exports.ids=[3380],exports.modules={469:(e,t,a)=>{a.a(e,async(e,s)=>{try{a.d(t,{d:()=>_,q:()=>o});var i=a(8678),E=a(2023),r=a.n(E),T=e([i]);i=(T.then?(await T)():T)[0];let n=process.env.DATABASE_URL||`postgres://${process.env.POSTGRES_USER||"gateway"}:${process.env.POSTGRES_PASSWORD||"gateway"}@${process.env.POSTGRES_HOST||"localhost"}:${process.env.POSTGRES_PORT||"5432"}/${process.env.POSTGRES_DB||"gateway_dev"}?sslmode=disable`,_=new i.Pool({connectionString:n,max:10,idleTimeoutMillis:3e4,connectionTimeoutMillis:5e3}),N=!1;async function o(){if(N)return;let e=await _.connect();try{let t;await e.query("BEGIN"),await e.query(`
+"use strict";exports.id=5456,exports.ids=[5456],exports.modules={469:(e,t,a)=>{a.a(e,async(e,T)=>{try{a.d(t,{d:()=>n,q:()=>N});var E=a(8678),i=a(2023),s=a.n(i),r=e([E]);E=(r.then?(await r)():r)[0];let o=process.env.DATABASE_URL||`postgres://${process.env.POSTGRES_USER||"gateway"}:${process.env.POSTGRES_PASSWORD||"gateway"}@${process.env.POSTGRES_HOST||"localhost"}:${process.env.POSTGRES_PORT||"5432"}/${process.env.POSTGRES_DB||"gateway_dev"}?sslmode=disable`,n=new E.Pool({connectionString:o,max:10,idleTimeoutMillis:3e4,connectionTimeoutMillis:5e3}),_=!1;async function N(){if(_)return;let e=await n.connect();try{let t;await e.query("BEGIN"),await e.query(`
       CREATE TABLE IF NOT EXISTS organizations (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         name VARCHAR(255) NOT NULL,
@@ -172,78 +172,149 @@
       CREATE INDEX IF NOT EXISTS idx_gateway_logs_trace_id ON gateway_logs (trace_id);
       CREATE INDEX IF NOT EXISTS idx_gateway_logs_server ON gateway_logs (mcp_server);
       CREATE INDEX IF NOT EXISTS idx_gateway_logs_tool ON gateway_logs (tool);
+    `),await e.query(`
+      CREATE TABLE IF NOT EXISTS llm_gateways (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        slug VARCHAR(100) UNIQUE NOT NULL,
+        status VARCHAR(50) NOT NULL DEFAULT 'active',
+        inbound_auth JSONB NOT NULL DEFAULT '{"mode": "api_key"}'::jsonb,
+        primary_backend JSONB NOT NULL DEFAULT '{}'::jsonb,
+        fallback_backends JSONB NOT NULL DEFAULT '[]'::jsonb,
+        routing_strategy VARCHAR(50) NOT NULL DEFAULT 'priority_fallback',
+        guardrails JSONB NOT NULL DEFAULT '{}'::jsonb,
+        metrics JSONB NOT NULL DEFAULT '{"tokens_processed": 0, "requests_total": 0}'::jsonb,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_llm_gateways_org ON llm_gateways (org_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_llm_gateways_slug ON llm_gateways (slug);
     `);let a=await e.query("SELECT id FROM organizations LIMIT 1");t=0===a.rows.length?(await e.query(`
         INSERT INTO organizations (name, slug)
         VALUES ('Default Enterprise', 'default-enterprise')
         RETURNING id
-      `)).rows[0].id:a.rows[0].id;let s=process.env.ADMIN_EMAIL||"admin@aigateway.local",i=process.env.ADMIN_PASSWORD||"Admin123!@#",E=await e.query("SELECT id FROM users WHERE email = $1",[s]);if(0===E.rows.length){let a=await r().genSalt(10),E=await r().hash(i,a);await e.query(`
+      `)).rows[0].id:a.rows[0].id;let T=process.env.ADMIN_EMAIL||"admin@aigateway.local",E=process.env.ADMIN_PASSWORD||"Admin123!@#",i=await e.query("SELECT id FROM users WHERE email = $1",[T]);if(0===i.rows.length){let a=await s().genSalt(10),i=await s().hash(E,a);await e.query(`
         INSERT INTO users (org_id, email, name, password_hash, role, status)
         VALUES ($1, $2, 'Primary Administrator', $3, 'admin', 'active')
-      `,[t,s,E])}let T=await e.query("SELECT id FROM projects LIMIT 1");0===T.rows.length&&await e.query(`
+      `,[t,T,i])}let r=await e.query("SELECT id FROM projects LIMIT 1");0===r.rows.length&&await e.query(`
         INSERT INTO projects (org_id, name, slug, status, settings, config_version)
         VALUES ($1, 'Production Gateway', 'production', 'active', '{"rate_limit": 1000}', 1)
-      `,[t]);let o=await e.query("SELECT id FROM gateway_instances WHERE name = $1",["gateway-default-01"]);if(0===o.rows.length){let t=await r().genSalt(10),a=await r().hash("dev-gateway-secret",t);await e.query(`
+      `,[t]);let N=await e.query("SELECT id FROM gateway_instances WHERE name = $1",["gateway-default-01"]);if(0===N.rows.length){let t=await s().genSalt(10),a=await s().hash("dev-gateway-secret",t);await e.query(`
         INSERT INTO gateway_instances (name, secret_hash, status, version)
         VALUES ('gateway-default-01', $1, 'registered', '1.0.0')
-      `,[a])}await e.query("COMMIT"),N=!0}catch(t){throw await e.query("ROLLBACK"),t}finally{e.release()}}s()}catch(e){s(e)}})},1211:(e,t,a)=>{a.d(t,{Q:()=>T,l:()=>r});var s=a(4770),i=a.n(s);let E=process.env.ENCRYPTION_KEY||"default-super-secret-key-32-byte!";function r(e){let t=i().randomBytes(12),a=i().createCipheriv("aes-256-gcm",Buffer.from(E.padEnd(32).slice(0,32)),t),s=a.update(e,"utf8","hex");s+=a.final("hex");let r=a.getAuthTag().toString("hex");return`${t.toString("hex")}:${r}:${s}`}function T(e){let t=e.split(":");if(3!==t.length)throw Error("Invalid ciphertext format");let[a,s,r]=t,T=i().createDecipheriv("aes-256-gcm",Buffer.from(E.padEnd(32).slice(0,32)),Buffer.from(a,"hex"));return T.setAuthTag(Buffer.from(s,"hex")),T.update(r,"hex","utf8")+T.final("utf8")}},9805:(e,t,a)=>{a.a(e,async(e,s)=>{try{a.d(t,{v:()=>_});var i=a(469),E=a(1482),r=a.n(E),T=a(2023),o=a.n(T),n=e([i]);i=(n.then?(await n)():n)[0];let N=process.env.CONSOLE_JWT_SECRET||"dev-console-secret-super-secure-key-32bytes-min";async function _(e){let t="",a=e.headers.get("authorization");if(!(t=a?.startsWith("Bearer ")?a.substring(7).trim():new URL(e.url).searchParams.get("token")||""))return null;let s=e.headers.get("x-gateway-id")||new URL(e.url).searchParams.get("gateway_id")||"";try{let e=r().verify(t,N);if(e?.type==="gateway"&&e.gatewayId)return{gatewayId:e.gatewayId,gatewayName:e.gatewayName||"Gateway"}}catch{}if(await (0,i.q)(),s){let e=await i.d.query(`
-      SELECT id, name, secret_hash, status, revoked_at
-      FROM gateway_instances
-      WHERE (id::text = $1 OR name = $1)
-    `,[s]);if(e.rows.length>0){let a=e.rows[0];if("revoked"!==a.status&&!a.revoked_at&&await o().compare(t,a.secret_hash))return{gatewayId:a.id,gatewayName:a.name}}}let E=await i.d.query(`
-    SELECT id, name, secret_hash, status, revoked_at
-    FROM gateway_instances
-    WHERE status != 'revoked' AND revoked_at IS NULL
-    ORDER BY last_seen_at DESC NULLS LAST
-    LIMIT 20
-  `);for(let e of E.rows)if(await o().compare(t,e.secret_hash))return{gatewayId:e.id,gatewayName:e.name};if("dev-gateway-secret"===t||"aigw_live_dev_test_secret_00000000000000"===t){let e=E.rows[0];return{gatewayId:e?e.id:"00000000-0000-0000-0000-000000000001",gatewayName:e?e.name:"Default Gateway"}}return null}s()}catch(e){s(e)}})},3471:(e,t,a)=>{a.a(e,async(e,s)=>{try{a.d(t,{T:()=>T});var i=a(469),E=a(1211),r=e([i]);async function T(e){await (0,i.q)();let t=`
-    SELECT id, name, slug, status, settings, config_version
-    FROM projects
-    WHERE status = 'active'
-    ORDER BY created_at ASC
-  `,a=[];e&&(await i.d.query("SELECT 1 FROM gateway_project_bindings WHERE gateway_id = $1 LIMIT 1",[e])).rows.length>0&&(t=`
-        SELECT p.id, p.name, p.slug, p.status, p.settings, p.config_version
-        FROM projects p
-        JOIN gateway_project_bindings gpb ON gpb.project_id = p.id
-        WHERE p.status = 'active' AND gpb.gateway_id = $1
-        ORDER BY p.created_at ASC
-      `,a.push(e));let s=await i.d.query(t,a),r=1;for(let e of s.rows)e.config_version>r&&(r=e.config_version);let T=await i.d.query(`
-    SELECT 
-      s.id,
-      s.project_id,
-      s.name,
-      s.namespace_prefix,
-      s.transport,
-      s.url,
-      s.auth_type,
-      s.timeouts,
-      s.enabled,
-      COALESCE(
-        json_agg(
-          DISTINCT jsonb_build_object(
-            'tool_name', tp.tool_name,
-            'enabled', tp.enabled,
-            'rename', tp.rename
-          )
-        ) FILTER (WHERE tp.id IS NOT NULL),
-        '[]'
-      ) as tool_policies,
-      CASE WHEN oc.id IS NOT NULL THEN
-        json_build_object(
-          'issuer', oc.issuer,
-          'token_endpoint', oc.token_endpoint,
-          'client_id', oc.client_id,
-          'client_secret_encrypted', oc.client_secret_encrypted,
-          'scopes', oc.scopes,
-          'audience', oc.audience,
-          'grant_type', oc.grant_type,
-          'status', COALESCE(ot.status, 'none')
+      `,[a])}let o=await e.query("SELECT id FROM llm_gateways LIMIT 1");0===o.rows.length&&await e.query(`
+        INSERT INTO llm_gateways (org_id, name, slug, status, inbound_auth, primary_backend, fallback_backends, routing_strategy, guardrails, metrics)
+        VALUES 
+        (
+          $1, 
+          'Enterprise Multi-Cloud Chat Gateway', 
+          'enterprise-chat', 
+          'active',
+          '{
+            "mode": "oauth_pkce",
+            "issuer": "https://auth.enterprise.okta.com/oauth2/default",
+            "client_id": "0oa9k18lq2AbCdEf0h7",
+            "audience": "https://gateway.corp/llm/enterprise-chat",
+            "scopes": ["llm:chat", "llm:stream"],
+            "jwks_uri": "https://auth.enterprise.okta.com/oauth2/default/v1/keys",
+            "allow_client_credentials": true,
+            "allow_api_key": true,
+            "api_key": "sec_llm_live_98a76bc543210fe"
+          }'::jsonb,
+          '{
+            "provider": "azure_openai",
+            "endpoint": "https://corp-ai-eastus2.openai.azure.com",
+            "deployment_name": "gpt-4o-prod",
+            "api_version": "2024-08-01-preview",
+            "model_alias": "gpt-4o",
+            "api_key": "••••••••••••••••••••••••••••••••",
+            "region": "eastus2",
+            "weight": 100
+          }'::jsonb,
+          '[
+            {
+              "provider": "aws_bedrock",
+              "region": "us-east-1",
+              "model_id": "anthropic.claude-3-5-sonnet-20240620-v1:0",
+              "model_alias": "claude-3-5-sonnet",
+              "access_key_id": "AKIA••••••••••••••••",
+              "secret_access_key": "••••••••••••••••••••••••••••••••",
+              "priority": 1,
+              "trigger_on_status": [429, 500, 503]
+            },
+            {
+              "provider": "openai_direct",
+              "model": "gpt-4o",
+              "model_alias": "gpt-4o",
+              "api_key": "sk-proj-••••••••••••••••••••••••••••••••",
+              "organization_id": "org-corp-enterprise",
+              "priority": 2,
+              "trigger_on_status": [429, 500, 503]
+            }
+          ]'::jsonb,
+          'priority_fallback',
+          '{
+            "rate_limits": { "requests_per_minute": 1200, "tokens_per_minute": 350000 },
+            "pii_masking": true,
+            "prompt_injection_detection": true,
+            "max_tokens_ceiling": 4096
+          }'::jsonb,
+          '{
+            "tokens_processed": 1428500,
+            "requests_total": 4210,
+            "prompt_tokens": 890200,
+            "completion_tokens": 538300,
+            "fallback_events": 14,
+            "avg_latency_ms": 285
+          }'::jsonb
+        ),
+        (
+          $1, 
+          'Code & Reasoning Intelligence Gateway', 
+          'code-intelligence', 
+          'active',
+          '{
+            "mode": "api_key",
+            "allow_client_credentials": true,
+            "issuer": "https://auth.enterprise.okta.com/oauth2/default",
+            "client_id": "0oa7x19mk0ZyXwVu1j9",
+            "api_key": "sec_llm_live_44f55e66d77c88b9"
+          }'::jsonb,
+          '{
+            "provider": "anthropic_direct",
+            "model": "claude-3-5-sonnet-latest",
+            "model_alias": "claude-3.5-sonnet",
+            "api_key": "sk-ant-api03-••••••••••••••••••••••••••••••••",
+            "api_version": "2023-06-01",
+            "weight": 100
+          }'::jsonb,
+          '[
+            {
+              "provider": "azure_openai",
+              "endpoint": "https://corp-ai-westus.openai.azure.com",
+              "deployment_name": "gpt-4o-mini-prod",
+              "model_alias": "gpt-4o-mini",
+              "api_version": "2024-08-01-preview",
+              "api_key": "••••••••••••••••••••••••••••••••",
+              "priority": 1,
+              "trigger_on_status": [429, 500, 503]
+            }
+          ]'::jsonb,
+          'lowest_latency',
+          '{
+            "rate_limits": { "requests_per_minute": 3000, "tokens_per_minute": 800000 },
+            "pii_masking": false,
+            "prompt_injection_detection": true,
+            "max_tokens_ceiling": 8192
+          }'::jsonb,
+          '{
+            "tokens_processed": 3892000,
+            "requests_total": 11450,
+            "prompt_tokens": 2100000,
+            "completion_tokens": 1792000,
+            "fallback_events": 3,
+            "avg_latency_ms": 194
+          }'::jsonb
         )
-      ELSE NULL END as oauth_config
-    FROM mcp_servers s
-    LEFT JOIN tool_policies tp ON tp.mcp_server_id = s.id
-    LEFT JOIN oauth_configs oc ON oc.mcp_server_id = s.id
-    LEFT JOIN oauth_tokens ot ON ot.mcp_server_id = s.id
-    WHERE s.enabled = true
-    GROUP BY s.id, oc.id, ot.status
-    ORDER BY s.created_at ASC
-  `),o={},n=[],_=[];for(let e of T.rows){o[e.project_id]||(o[e.project_id]=[]);let t=null;e.oauth_config&&(t={...e.oauth_config,client_secret:e.oauth_config.client_secret_encrypted?(0,E.Q)(e.oauth_config.client_secret_encrypted):""},delete t.client_secret_encrypted);let a={id:e.id,name:e.name,namespace_prefix:e.namespace_prefix,transport:e.transport,url:e.url,auth_type:e.auth_type,timeouts:e.timeouts,enabled:e.enabled,tool_policies:e.tool_policies||[],oauth_config:t};o[e.project_id].push(a),_.push({id:`mcp_${e.namespace_prefix}_${e.id.substring(0,8)}`,provider:e.name,endpoint:e.url,transport:e.transport,auth_type:e.auth_type,rate_limits:{rpm:600,burst:50}})}let N={};for(let e of s.rows){let t=e.settings||{},a=t.inbound_auth||{},s={mode:a.mode||"none",issuer:a.issuer||"",jwks_uri:a.jwks_uri||"",audience:a.audience||"",required_scopes:a.required_scopes||[]};N[e.slug]={id:e.id,slug:e.slug,name:e.name,status:e.status,config_version:e.config_version,settings:e.settings,inbound_auth:s,servers:o[e.id]||[]},n.push({id:`route_${e.slug}`,path_prefix:`/p/${e.slug}/mcp`,project_id:e.id,slug:e.slug,timeout_ms:t.circuit_breaker?.call_timeout_ms||15e3,retries:2,circuit_breaker:{failure_threshold_pct:50,recovery_time_sec:t.circuit_breaker?.recovery_seconds||15}})}return{$schema:"https://json-schema.org/draft/2020-12/schema",version:`v${r}`,config_version:r,timestamp:new Date().toISOString(),routes:n,providers:_,guardrails:{blocked_regex_patterns:["(?i)(api[_-]?key|bearer\\s+[a-z0-9_-]+)","(?i)(password|secret)\\s*[:=]\\s*['\"][^'\"]+['\"]"],max_input_tokens:16384,pii_redaction:!0},projects:N,circuit_breaker_defaults:{failure_threshold_pct:50,recovery_time_sec:15,dial_timeout_ms:5e3,call_timeout_ms:15e3}}}i=(r.then?(await r)():r)[0],s()}catch(e){s(e)}})}};
+      `,[t]),await e.query("COMMIT"),_=!0}catch(t){throw await e.query("ROLLBACK"),t}finally{e.release()}}T()}catch(e){T(e)}})},5456:(e,t,a)=>{a.a(e,async(e,T)=>{try{a.d(t,{So:()=>L,g$:()=>_,uy:()=>n});var E=a(1482),i=a.n(E),s=a(2023),r=a.n(s),N=a(469),o=e([N]);N=(o.then?(await o)():o)[0];let A=process.env.CONSOLE_JWT_SECRET||"dev-console-secret-super-secure-key-32bytes-min";function n(e){return i().sign(e,A,{expiresIn:"7d"})}function _(e){try{return i().verify(e,A)}catch{return null}}async function L(e,t){await (0,N.q)();let a=await N.d.query("SELECT id, org_id, email, name, password_hash, role, status FROM users WHERE email = $1",[e.toLowerCase().trim()]);if(0===a.rows.length)return null;let T=a.rows[0];return"active"===T.status&&await r().compare(t,T.password_hash)?{userId:T.id,orgId:T.org_id,email:T.email,name:T.name,role:T.role}:null}T()}catch(e){T(e)}})}};

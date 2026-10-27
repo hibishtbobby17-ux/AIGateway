@@ -200,6 +200,30 @@ export default function DashboardView({
             Browse Marketplace →
           </span>
         </div>
+
+        {/* Metric 6: Universal LLM Gateways */}
+        <div
+          className="glass-panel"
+          style={{ padding: '20px', cursor: 'pointer' }}
+          onClick={() => onNavigateToTab('llm-gateway')}
+          title="Click to view LLM Gateway"
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              LLM Gateways
+            </span>
+            <span style={{ fontSize: '1.2rem' }}>🔮</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+            <span style={{ fontSize: '1.9rem', fontWeight: 800, color: 'var(--text-main)' }}>
+              5.32M
+            </span>
+            <span className="badge badge-indigo" style={{ fontSize: '0.72rem' }}>Tokens</span>
+          </div>
+          <span style={{ fontSize: '0.75rem', color: 'var(--primary-text)', marginTop: '4px', display: 'block', fontWeight: 500 }}>
+            Multi-Cloud LLM Proxy →
+          </span>
+        </div>
       </div>
 
       {/* Interactive Telemetry & Traffic Graphs */}
