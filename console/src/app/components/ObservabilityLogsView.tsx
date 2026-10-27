@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
+import CommunicationPathHighway from './CommunicationPathHighway';
 
 interface ObservabilityLogsViewProps {
   projects?: any[];
@@ -35,6 +36,26 @@ export default function ObservabilityLogsView({
   const [autoRefresh, setAutoRefresh] = useState<boolean>(true);
   const [selectedConnection, setSelectedConnection] = useState<string>('all');
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
+  const [selectedGatewayId, setSelectedGatewayId] = useState<string>('all');
+
+  // Multi-Gateway Fleet Discovery & Fallbacks
+  const allFleetGateways = useMemo(() => {
+    const defaults = [
+      { id: 'gateway-default-01', name: 'gateway-default-01', status: 'active', region: 'us-east-1', port: 8080, version: 'v1.0.0', applied_config_version: 147, bound_projects_count: 3 },
+      { id: 'gateway-prod-eu', name: 'gateway-prod-eu', status: 'active', region: 'eu-central-1', port: 8443, version: 'v1.0.0', applied_config_version: 147, bound_projects_count: 2 },
+      { id: 'gateway-edge-apac', name: 'gateway-edge-apac', status: 'active', region: 'ap-southeast-1', port: 8080, version: 'v0.9.8', applied_config_version: 146, bound_projects_count: 1 },
+      { id: 'gateway-staging-dev', name: 'gateway-staging-dev', status: 'offline', region: 'us-west-2', port: 3001, version: 'v1.1.0-rc2', applied_config_version: 142, bound_projects_count: 1 },
+    ];
+    if (!gatewaysList || gatewaysList.length === 0) return defaults;
+    const realIds = new Set(gatewaysList.map(g => g.id));
+    const merged = [...gatewaysList];
+    for (const def of defaults) {
+      if (!realIds.has(def.id)) {
+        merged.push(def);
+      }
+    }
+    return merged;
+  }, [gatewaysList]);
 
   // Search & Filtering
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -183,7 +204,29 @@ export default function ObservabilityLogsView({
         </div>
 
         {/* Header Action Controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          {/* AI Gateway Selector */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>⚡ AI Gateway:</span>
+            <select
+              className="input-field"
+              value={selectedGatewayId}
+              onChange={(e) => {
+                setSelectedGatewayId(e.target.value);
+                const gw = allFleetGateways.find(g => g.id === e.target.value);
+                showBanner(`Switched active telemetry scope to ${gw ? gw.name : 'All Gateways'}`, 'info');
+              }}
+              style={{ height: '36px', fontSize: '0.8rem', minWidth: '190px' }}
+            >
+              <option value="all">⚡ All Fleet Gateways ({allFleetGateways.length})</option>
+              {allFleetGateways.map(gw => (
+                <option key={gw.id} value={gw.id}>
+                  {gw.status === 'active' ? '🟢' : '⚪'} {gw.name} ({gw.region || 'us-east-1'})
+                </option>
+              ))}
+            </select>
+          </div>
+
           <button
             onClick={() => setAutoRefresh(!autoRefresh)}
             className="btn-secondary"
@@ -278,7 +321,7 @@ export default function ObservabilityLogsView({
               transition: 'all 0.15s ease'
             }}
           >
-            🗺️ 1. End-to-End Graphic Connection Map
+            🛣️ 1. Graphic Communication Path
           </button>
 
           <button
@@ -337,406 +380,21 @@ export default function ObservabilityLogsView({
         </div>
       </div>
 
-      {/* TAB 1: GRAPHIC VIEW OF END-TO-END COMMUNICATION & CONNECTION */}
+      {/* TAB 1: GRAPHIC VIEW OF END-TO-END COMMUNICATION HIGHWAY */}
       {activeSubTab === 'graphic' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-          {/* Interactive Topology Graph Canvas */}
-          <div className="glass-panel" style={{
-            padding: '24px',
-            background: 'radial-gradient(circle at 50% 50%, rgba(99, 102, 241, 0.05) 0%, var(--bg-surface) 100%)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: 'var(--radius-md)',
-            position: 'relative',
-            overflow: 'hidden'
-          }}>
-            {/* Diagram Title Banner */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-              <div>
-                <strong style={{ fontSize: '0.98rem', color: 'var(--text-main)', display: 'block' }}>
-                  Live End-to-End Distributed Architecture Map
-                </strong>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                  Click any node or pipeline to highlight live traffic, inspect socket metrics, or filter logs.
-                </span>
-              </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <span className="badge badge-cyan" style={{ fontSize: '0.7rem' }}>W3C Trace Context Propagated</span>
-                <span className="badge badge-emerald" style={{ fontSize: '0.7rem' }}>Zero-Downtime Ring Buffer</span>
-              </div>
-            </div>
-
-            {/* 4-Layer Graphic Architecture Columns */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(4, 1fr)',
-              gap: '20px',
-              position: 'relative',
-              zIndex: 2
-            }}>
-              {/* COLUMN 1: CONSUMERS / CLIENTS */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div style={{
-                  padding: '8px 12px',
-                  borderRadius: 'var(--radius-sm)',
-                  background: 'rgba(56, 189, 248, 0.1)',
-                  border: '1px solid rgba(56, 189, 248, 0.25)',
-                  textAlign: 'center'
-                }}>
-                  <strong style={{ fontSize: '0.8rem', color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    1. Inbound Clients
-                  </strong>
-                </div>
-
-                {/* Client Node 1: Python/TS SDK */}
-                <div
-                  onClick={() => setSelectedConnection(selectedConnection === 'client-gateway' ? 'all' : 'client-gateway')}
-                  style={{
-                    padding: '14px',
-                    borderRadius: 'var(--radius-sm)',
-                    border: `2px solid ${selectedConnection === 'client-gateway' ? '#38bdf8' : 'var(--border-subtle)'}`,
-                    background: 'var(--bg-surface-subtle)',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    boxShadow: selectedConnection === 'client-gateway' ? '0 0 16px rgba(56, 189, 248, 0.3)' : 'none'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                    <span style={{ fontSize: '1.2rem' }}>🐍</span>
-                    <span className="badge badge-cyan" style={{ fontSize: '0.65rem' }}>HTTP/2 TLS</span>
-                  </div>
-                  <strong style={{ fontSize: '0.86rem', color: 'var(--text-main)', display: 'block' }}>Python / TS SDK Apps</strong>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>OpenAI Client / LangChain</span>
-                  <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: '#38bdf8' }}>
-                    <span>42 QPS</span>
-                    <span>Bearer API Key</span>
-                  </div>
-                </div>
-
-                {/* Client Node 2: Claude Desktop / Cursor */}
-                <div
-                  onClick={() => setSelectedConnection(selectedConnection === 'client-gateway' ? 'all' : 'client-gateway')}
-                  style={{
-                    padding: '14px',
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1px solid var(--border-subtle)',
-                    background: 'var(--bg-surface-subtle)',
-                    cursor: 'pointer'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                    <span style={{ fontSize: '1.2rem' }}>💻</span>
-                    <span className="badge badge-indigo" style={{ fontSize: '0.65rem' }}>SSE Stream</span>
-                  </div>
-                  <strong style={{ fontSize: '0.86rem', color: 'var(--text-main)', display: 'block' }}>Claude Desktop / IDEs</strong>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Cursor / VS Code MCP Client</span>
-                  <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: '#a78bfa' }}>
-                    <span>18 QPS</span>
-                    <span>Okta PKCE</span>
-                  </div>
-                </div>
-
-                {/* Client Node 3: Autonomous Agents */}
-                <div
-                  onClick={() => setSelectedConnection(selectedConnection === 'client-gateway' ? 'all' : 'client-gateway')}
-                  style={{
-                    padding: '14px',
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1px solid var(--border-subtle)',
-                    background: 'var(--bg-surface-subtle)',
-                    cursor: 'pointer'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                    <span style={{ fontSize: '1.2rem' }}>🤖</span>
-                    <span className="badge badge-emerald" style={{ fontSize: '0.65rem' }}>A2A Proto</span>
-                  </div>
-                  <strong style={{ fontSize: '0.86rem', color: 'var(--text-main)', display: 'block' }}>LangGraph / CrewAI</strong>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Autonomous Agents Swarm</span>
-                  <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: '#10b981' }}>
-                    <span>26 QPS</span>
-                    <span>OAuth CC M2M</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* COLUMN 2: GATEWAY INGRESS & POLICY CORE */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div style={{
-                  padding: '8px 12px',
-                  borderRadius: 'var(--radius-sm)',
-                  background: 'rgba(99, 102, 241, 0.1)',
-                  border: '1px solid rgba(99, 102, 241, 0.25)',
-                  textAlign: 'center'
-                }}>
-                  <strong style={{ fontSize: '0.8rem', color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    2. AI Gateway Core
-                  </strong>
-                </div>
-
-                {/* Edge Ingress Proxy */}
-                <div
-                  onClick={() => setSelectedConnection('all')}
-                  style={{
-                    padding: '16px',
-                    borderRadius: 'var(--radius-sm)',
-                    border: '2px solid var(--primary)',
-                    background: 'rgba(99, 102, 241, 0.08)',
-                    cursor: 'pointer',
-                    boxShadow: '0 4px 16px rgba(99, 102, 241, 0.25)'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                    <span style={{ fontSize: '1.3rem' }}>⚡</span>
-                    <span className="badge badge-emerald" style={{ fontSize: '0.68rem' }}>Port 8080 / 3000</span>
-                  </div>
-                  <strong style={{ fontSize: '0.92rem', color: 'var(--text-main)', display: 'block' }}>
-                    Stateless Go Data Plane
-                  </strong>
-                  <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                    Inbound TLS 1.3 Termination, W3C Trace Injector, Non-blocking Spooler
-                  </span>
-
-                  <div style={{ marginTop: '12px', padding: '10px', background: 'var(--bg-surface)', borderRadius: '6px', fontSize: '0.72rem', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-muted)' }}>Applied Config:</span>
-                      <strong style={{ color: '#10b981' }}>v147 (Synced)</strong>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-muted)' }}>Throughput:</span>
-                      <strong style={{ color: 'var(--text-main)' }}>86 req/sec</strong>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-muted)' }}>Ring Buffer:</span>
-                      <strong style={{ color: '#38bdf8' }}>0.02% utilized</strong>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Policy & Rate Limit Filter */}
-                <div style={{
-                  padding: '14px',
-                  borderRadius: 'var(--radius-sm)',
-                  border: '1px solid var(--border-subtle)',
-                  background: 'var(--bg-surface-subtle)'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                    <span>🛡️</span>
-                    <strong style={{ fontSize: '0.84rem', color: 'var(--text-main)' }}>Security & Routing Filter</strong>
-                  </div>
-                  <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '0.72rem', color: 'var(--text-muted)', lineHeight: '1.6' }}>
-                    <li>Token Bucket Rate Limiter</li>
-                    <li>SSRF Safe Egress Dialer</li>
-                    <li>AES-256 Secret Unsealer</li>
-                    <li>Prompt Guardrails & Redaction</li>
-                  </ul>
-                </div>
-              </div>
-
-              {/* COLUMN 3: DOWNSTREAM TARGET BACKENDS */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div style={{
-                  padding: '8px 12px',
-                  borderRadius: 'var(--radius-sm)',
-                  background: 'rgba(16, 185, 129, 0.1)',
-                  border: '1px solid rgba(16, 185, 129, 0.25)',
-                  textAlign: 'center'
-                }}>
-                  <strong style={{ fontSize: '0.8rem', color: '#10b981', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    3. Downstream Targets
-                  </strong>
-                </div>
-
-                {/* Target 1: Multi-Cloud LLM Backends */}
-                <div
-                  onClick={() => setSelectedConnection(selectedConnection === 'gateway-llm' ? 'all' : 'gateway-llm')}
-                  style={{
-                    padding: '14px',
-                    borderRadius: 'var(--radius-sm)',
-                    border: `2px solid ${selectedConnection === 'gateway-llm' ? '#10b981' : 'var(--border-subtle)'}`,
-                    background: 'var(--bg-surface-subtle)',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    boxShadow: selectedConnection === 'gateway-llm' ? '0 0 16px rgba(16, 185, 129, 0.3)' : 'none'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                    <span style={{ fontSize: '1.2rem' }}>🔮</span>
-                    <span className="badge badge-indigo" style={{ fontSize: '0.65rem' }}>Auto-Failover</span>
-                  </div>
-                  <strong style={{ fontSize: '0.86rem', color: 'var(--text-main)', display: 'block' }}>Multi-Cloud LLM Pool</strong>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Azure OpenAI ➔ AWS Bedrock ➔ Anthropic</span>
-                  <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: '#10b981' }}>
-                    <span>Latency: 185ms</span>
-                    <span>Tokens: 3.8M</span>
-                  </div>
-                </div>
-
-                {/* Target 2: Downstream MCP Tool Servers */}
-                <div
-                  onClick={() => setSelectedConnection(selectedConnection === 'gateway-mcp' ? 'all' : 'gateway-mcp')}
-                  style={{
-                    padding: '14px',
-                    borderRadius: 'var(--radius-sm)',
-                    border: `2px solid ${selectedConnection === 'gateway-mcp' ? '#38bdf8' : 'var(--border-subtle)'}`,
-                    background: 'var(--bg-surface-subtle)',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    boxShadow: selectedConnection === 'gateway-mcp' ? '0 0 16px rgba(56, 189, 248, 0.3)' : 'none'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                    <span style={{ fontSize: '1.2rem' }}>🔌</span>
-                    <span className="badge badge-cyan" style={{ fontSize: '0.65rem' }}>Tool Catalog</span>
-                  </div>
-                  <strong style={{ fontSize: '0.86rem', color: 'var(--text-main)', display: 'block' }}>MCP Tool Servers</strong>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Postgres (db_), Math (math_), Weather</span>
-                  <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: '#38bdf8' }}>
-                    <span>Latency: 8.2ms</span>
-                    <span>28 Tools</span>
-                  </div>
-                </div>
-
-                {/* Target 3: Downstream AI Agents */}
-                <div
-                  onClick={() => setSelectedConnection(selectedConnection === 'gateway-agent' ? 'all' : 'gateway-agent')}
-                  style={{
-                    padding: '14px',
-                    borderRadius: 'var(--radius-sm)',
-                    border: `2px solid ${selectedConnection === 'gateway-agent' ? '#a78bfa' : 'var(--border-subtle)'}`,
-                    background: 'var(--bg-surface-subtle)',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    boxShadow: selectedConnection === 'gateway-agent' ? '0 0 16px rgba(167, 139, 250, 0.3)' : 'none'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                    <span style={{ fontSize: '1.2rem' }}>🤖</span>
-                    <span className="badge badge-emerald" style={{ fontSize: '0.65rem' }}>Agent Cards</span>
-                  </div>
-                  <strong style={{ fontSize: '0.86rem', color: 'var(--text-main)', display: 'block' }}>Downstream AI Agents</strong>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Financial Auditor, Code Reviewer</span>
-                  <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: '#a78bfa' }}>
-                    <span>Latency: 24ms</span>
-                    <span>Async Tasks</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* COLUMN 4: TELEMETRY STORAGE SINKS */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div style={{
-                  padding: '8px 12px',
-                  borderRadius: 'var(--radius-sm)',
-                  background: 'rgba(245, 158, 11, 0.1)',
-                  border: '1px solid rgba(245, 158, 11, 0.25)',
-                  textAlign: 'center'
-                }}>
-                  <strong style={{ fontSize: '0.8rem', color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    4. Telemetry Storage
-                  </strong>
-                </div>
-
-                {/* Sink: ClickHouse OLAP */}
-                <div
-                  onClick={() => setSelectedConnection(selectedConnection === 'gateway-telemetry' ? 'all' : 'gateway-telemetry')}
-                  style={{
-                    padding: '14px',
-                    borderRadius: 'var(--radius-sm)',
-                    border: `2px solid ${selectedConnection === 'gateway-telemetry' ? '#f59e0b' : 'var(--border-subtle)'}`,
-                    background: 'var(--bg-surface-subtle)',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                    <span style={{ fontSize: '1.2rem' }}>⚡</span>
-                    <span className="badge badge-amber" style={{ fontSize: '0.65rem' }}>Columnar OLAP</span>
-                  </div>
-                  <strong style={{ fontSize: '0.86rem', color: 'var(--text-main)', display: 'block' }}>ClickHouse Database</strong>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Port 8123 (HTTP) / 9000 (Native)</span>
-                  <div style={{ marginTop: '8px', fontSize: '0.72rem', color: '#f59e0b' }}>
-                    <span>Compression: 88% • Sub-second Aggregations</span>
-                  </div>
-                </div>
-
-                {/* Sinks: AWS OpenSearch / S3 */}
-                <div style={{
-                  padding: '14px',
-                  borderRadius: 'var(--radius-sm)',
-                  border: '1px solid var(--border-subtle)',
-                  background: 'var(--bg-surface-subtle)'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                    <span>🪣</span>
-                    <strong style={{ fontSize: '0.84rem', color: 'var(--text-main)' }}>Pluggable Sinks</strong>
-                  </div>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', lineHeight: 1.5 }}>
-                    Configured at deployment time:
-                  </span>
-                  <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.72rem' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>• AWS OpenSearch (Text Indexing)</span>
-                    <span style={{ color: 'var(--text-muted)' }}>• AWS S3 (Parquet Data Lake)</span>
-                    <span style={{ color: 'var(--text-muted)' }}>• OpenTelemetry OTLP Collector</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Connection Details Diagnostic Bar */}
-          <div style={{
-            background: 'var(--bg-surface-subtle)',
-            borderRadius: 'var(--radius-sm)',
-            border: '1px solid var(--border-subtle)',
-            padding: '14px 18px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: '12px'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontSize: '1.2rem' }}>🔍</span>
-              <div>
-                <strong style={{ fontSize: '0.86rem', color: 'var(--text-main)', display: 'block' }}>
-                  {selectedConnection === 'all'
-                    ? 'Showing All End-to-End Connections'
-                    : selectedConnection === 'client-gateway'
-                    ? 'Selected Hop: Inbound Client ➔ Gateway Ingress'
-                    : selectedConnection === 'gateway-llm'
-                    ? 'Selected Hop: Gateway Proxy ➔ Multi-Cloud LLM Backends'
-                    : selectedConnection === 'gateway-mcp'
-                    ? 'Selected Hop: Gateway Tool Invoker ➔ MCP Servers'
-                    : selectedConnection === 'gateway-agent'
-                    ? 'Selected Hop: Gateway A2A Coordinator ➔ Autonomous Agents'
-                    : 'Selected Hop: Gateway Spooler ➔ Telemetry Sinks'}
-                </strong>
-                <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-                  Filtering {filteredLogs.length} matching telemetry spans below. Click &quot;View Full Log Stream&quot; to inspect payloads.
-                </span>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {selectedConnection !== 'all' && (
-                <button
-                  onClick={() => setSelectedConnection('all')}
-                  className="btn-secondary"
-                  style={{ fontSize: '0.78rem', height: '32px', padding: '0 12px' }}
-                >
-                  ✕ Reset Filter
-                </button>
-              )}
-              <button
-                onClick={() => setActiveSubTab('stream')}
-                className="btn-primary"
-                style={{ fontSize: '0.78rem', height: '32px', padding: '0 14px' }}
-              >
-                Inspect Logs Stream ➔
-              </button>
-            </div>
-          </div>
-        </div>
+        <CommunicationPathHighway
+          selectedConnection={selectedConnection}
+          onSelectConnection={setSelectedConnection}
+          filteredLogsCount={filteredLogs.length}
+          onInspectLogsStream={() => setActiveSubTab('stream')}
+          onInspectWaterfall={() => setActiveSubTab('waterfall')}
+          showBanner={showBanner}
+          onFireSimulatedTrace={handleFireSimulatedTrace}
+          isLoading={isLoading}
+          gatewaysList={allFleetGateways}
+          selectedGatewayId={selectedGatewayId}
+          onSelectGateway={setSelectedGatewayId}
+        />
       )}
 
       {/* TAB 2: TELEMETRY LOGS & TRACES STREAM */}
