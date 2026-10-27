@@ -16,6 +16,7 @@ import AgentsRegistryView from './components/AgentsRegistryView';
 import DeploySettingsView from './components/DeploySettingsView';
 import ConsoleConfigView from './components/ConsoleConfigView';
 import LLMGatewayView from './components/LLMGatewayView';
+import ObservabilityLogsView from './components/ObservabilityLogsView';
 
 interface User {
   userId: string;
@@ -1516,27 +1517,31 @@ export default function ConsoleDashboard() {
             Observability
           </span>
 
-          {/* Logs */}
+          {/* Communication Map & Logs */}
           <button
             onClick={() => setActiveTab('logs')}
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '10px',
-              padding: '8px 14px',
+              justifyContent: 'space-between',
+              padding: '9px 14px',
               borderRadius: 'var(--radius-sm)',
               border: activeTab === 'logs' ? '1px solid var(--border-strong)' : '1px solid transparent',
               background: activeTab === 'logs' ? 'var(--primary-subtle)' : 'transparent',
-              color: activeTab === 'logs' ? 'var(--primary-text)' : 'var(--text-muted)',
-              fontWeight: activeTab === 'logs' ? 600 : 500,
+              color: activeTab === 'logs' ? 'var(--primary-text)' : 'var(--text-main)',
+              fontWeight: activeTab === 'logs' ? 700 : 500,
               fontSize: '0.84rem',
               cursor: 'pointer',
               textAlign: 'left',
-              width: '100%'
+              width: '100%',
+              transition: 'all 0.15s ease'
             }}
           >
-            <span>📊</span>
-            <span>Logs & Telemetry</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '1.1rem' }}>🌐</span>
+              <span>Communication & Logs</span>
+            </div>
+            <span className="badge badge-emerald" style={{ fontSize: '0.62rem' }}>Graphic</span>
           </button>
 
           {/* Audit */}
@@ -2247,259 +2252,13 @@ export default function ConsoleDashboard() {
             </div>
           )}
 
-          {/* TAB 4: Gateway Logs & Telemetry Viewer */}
+          {/* TAB 4: End-to-End Observability, Communication Map & Logs */}
           {activeTab === 'logs' && (
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
-                <div>
-                  <h2 style={{ fontSize: '1.6rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '4px' }}>
-                    Gateway Logs & Telemetry
-                  </h2>
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
-                    Real-time aggregated MCP access logs and execution metrics ingested from the headless gateway fleet.
-                  </p>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <button
-                    onClick={() => setLogAutoRefresh(!logAutoRefresh)}
-                    className="btn-secondary"
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      fontSize: '0.85rem',
-                      borderColor: logAutoRefresh ? 'rgba(16, 185, 129, 0.4)' : 'var(--border-subtle)',
-                      background: logAutoRefresh ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255, 255, 255, 0.05)',
-                    }}
-                  >
-                    <span className="pulse-dot" style={{ backgroundColor: logAutoRefresh ? '#10b981' : '#64748b' }}></span>
-                    Auto-refresh: {logAutoRefresh ? 'ON' : 'OFF'}
-                  </button>
-                  <button
-                    id="refresh-logs-btn"
-                    onClick={loadLogs}
-                    disabled={logsLoading}
-                    className="btn-primary"
-                    style={{ fontSize: '0.85rem' }}
-                  >
-                    {logsLoading ? 'Refreshing...' : '🔄 Refresh Now'}
-                  </button>
-                </div>
-              </div>
-
-              {/* Stats Bar */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '20px' }}>
-                <div className="glass-panel" style={{ padding: '16px 20px' }}>
-                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    Total Ingested Events
-                  </span>
-                  <div style={{ fontSize: '1.6rem', fontWeight: 700, color: 'var(--text-main)', marginTop: '4px' }}>
-                    {logsTotal}
-                  </div>
-                </div>
-                <div className="glass-panel" style={{ padding: '16px 20px' }}>
-                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    Avg Latency (Current View)
-                  </span>
-                  <div style={{ fontSize: '1.6rem', fontWeight: 700, color: 'var(--accent-cyan)', marginTop: '4px' }}>
-                    {logs.length > 0 ? (logs.reduce((acc, l) => acc + (parseFloat(l.latency_ms) || 0), 0) / logs.length).toFixed(2) : '0.00'} ms
-                  </div>
-                </div>
-                <div className="glass-panel" style={{ padding: '16px 20px' }}>
-                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    Success Rate
-                  </span>
-                  <div style={{ fontSize: '1.6rem', fontWeight: 700, color: '#34d399', marginTop: '4px' }}>
-                    {logs.length > 0 ? ((logs.filter(l => l.status === '200').length / logs.length) * 100).toFixed(1) : '100.0'}%
-                  </div>
-                </div>
-                <div className="glass-panel" style={{ padding: '16px 20px' }}>
-                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    Ingest Pipeline
-                  </span>
-                  <div style={{ fontSize: '1rem', fontWeight: 600, color: '#a78bfa', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span>⚡ Redis Stream ➔ PG</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Filters Bar */}
-              <div className="glass-panel" style={{ padding: '16px 20px', marginBottom: '20px', display: 'flex', flexWrap: 'wrap', gap: '14px', alignItems: 'center' }}>
-                <div style={{ flex: '1 1 200px' }}>
-                  <input
-                    id="log-search-input"
-                    className="input-field"
-                    placeholder="Search by tool, server, error, trace..."
-                    value={logFilterSearch}
-                    onChange={(e) => setLogFilterSearch(e.target.value)}
-                  />
-                </div>
-
-                <div style={{ minWidth: '180px' }}>
-                  <select
-                    id="log-project-filter"
-                    className="input-field"
-                    value={logFilterProject}
-                    onChange={(e) => setLogFilterProject(e.target.value)}
-                  >
-                    <option value="">All Projects</option>
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.slug}>{p.name} ({p.slug})</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div style={{ minWidth: '140px' }}>
-                  <select
-                    id="log-status-filter"
-                    className="input-field"
-                    value={logFilterStatus}
-                    onChange={(e) => setLogFilterStatus(e.target.value)}
-                  >
-                    <option value="">All Statuses</option>
-                    <option value="200">200 OK</option>
-                    <option value="400">400 Bad Request</option>
-                    <option value="401">401 Unauthorized</option>
-                    <option value="404">404 Not Found</option>
-                    <option value="500">500 Server Error</option>
-                    <option value="-32601">-32601 Method Not Found</option>
-                    <option value="-32000">-32000 Downstream Error</option>
-                  </select>
-                </div>
-
-                {(logFilterProject || logFilterStatus || logFilterSearch) && (
-                  <button
-                    onClick={() => {
-                      setLogFilterProject('');
-                      setLogFilterStatus('');
-                      setLogFilterSearch('');
-                    }}
-                    className="btn-secondary"
-                    style={{ fontSize: '0.8rem', padding: '6px 12px' }}
-                  >
-                    ✕ Clear Filters
-                  </button>
-                )}
-              </div>
-
-              {/* Logs Table */}
-              <div className="glass-panel" style={{ overflow: 'hidden' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-surface-subtle)' }}>
-                      <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Timestamp</th>
-                      <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Status</th>
-                      <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Project</th>
-                      <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Server</th>
-                      <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Tool</th>
-                      <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Latency</th>
-                      <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Trace ID</th>
-                      <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600, textAlign: 'right' }}>Details</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {logs.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} style={{ padding: '48px 16px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                          <div style={{ fontSize: '2rem', marginBottom: '8px' }}>📡</div>
-                          <div style={{ fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>No Gateway Logs Found</div>
-                          <div style={{ fontSize: '0.8rem' }}>Call tools via <code>/p/{'{slug}'}/mcp</code> to generate telemetry events.</div>
-                        </td>
-                      </tr>
-                    ) : (
-                      logs.map((log) => {
-                        const isExpanded = expandedLogId === log.id;
-                        const isOk = log.status === '200';
-                        const isWarn = log.status?.startsWith('4') || log.status === '401';
-                        return (
-                          <React.Fragment key={log.id}>
-                            <tr
-                              onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
-                              style={{
-                                borderBottom: '1px solid var(--border-subtle)',
-                                cursor: 'pointer',
-                                background: isExpanded ? 'rgba(99, 102, 241, 0.08)' : 'transparent',
-                                transition: 'background 0.15s ease',
-                              }}
-                            >
-                              <td style={{ padding: '12px 16px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>
-                                {new Date(log.timestamp).toLocaleTimeString()}
-                              </td>
-                              <td style={{ padding: '12px 16px' }}>
-                                <span className={`badge ${isOk ? 'badge-emerald' : isWarn ? 'badge-amber' : 'badge-rose'}`} style={{ fontSize: '0.75rem' }}>
-                                  {log.status}
-                                </span>
-                              </td>
-                              <td style={{ padding: '12px 16px', color: 'var(--text-main)', fontWeight: 500 }}>
-                                {log.project}
-                              </td>
-                              <td style={{ padding: '12px 16px', color: 'var(--text-muted)' }}>
-                                {log.mcp_server || '—'}
-                              </td>
-                              <td style={{ padding: '12px 16px', color: log.tool ? 'var(--accent-cyan)' : 'var(--text-dim)' }}>
-                                {log.tool || 'initialize / list'}
-                              </td>
-                              <td style={{ padding: '12px 16px', color: 'var(--text-main)', fontFamily: 'monospace' }}>
-                                {parseFloat(log.latency_ms || 0).toFixed(2)} ms
-                              </td>
-                              <td style={{ padding: '12px 16px', color: 'var(--text-dim)', fontFamily: 'monospace', fontSize: '0.78rem' }}>
-                                {log.trace_id ? log.trace_id.substring(0, 16) + '...' : '—'}
-                              </td>
-                              <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                                <button className="btn-secondary" style={{ padding: '2px 8px', fontSize: '0.75rem' }}>
-                                  {isExpanded ? '▲ Less' : '▼ Inspect'}
-                                </button>
-                              </td>
-                            </tr>
-
-                            {isExpanded && (
-                              <tr style={{ background: 'var(--bg-surface-subtle)', borderBottom: '1px solid var(--border-subtle)' }}>
-                                <td colSpan={8} style={{ padding: '16px 24px' }}>
-                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
-                                    <div>
-                                      <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginBottom: '4px' }}>EVENT & TRACE IDS</div>
-                                      <div style={{ fontSize: '0.8rem', fontFamily: 'monospace', color: '#fff', wordBreak: 'break-all' }}>
-                                        Event ID: {log.event_id}<br />
-                                        Trace ID: {log.trace_id || 'n/a'}<br />
-                                        Client ID: {log.client_id || 'n/a'}
-                                      </div>
-                                    </div>
-                                    <div>
-                                      <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginBottom: '4px' }}>PAYLOAD SIZES</div>
-                                      <div style={{ fontSize: '0.8rem', fontFamily: 'monospace', color: '#fff' }}>
-                                        Bytes In: {log.bytes_in || 0} bytes<br />
-                                        Bytes Out: {log.bytes_out || 0} bytes<br />
-                                        Recorded: {new Date(log.timestamp).toISOString()}
-                                      </div>
-                                    </div>
-                                    {log.error && (
-                                      <div style={{ gridColumn: '1 / -1' }}>
-                                        <div style={{ fontSize: '0.75rem', color: '#fda4af', marginBottom: '4px' }}>ERROR DETAILS</div>
-                                        <div style={{ background: 'rgba(244, 63, 94, 0.15)', border: '1px solid rgba(244, 63, 94, 0.3)', padding: '8px 12px', borderRadius: '6px', color: '#fda4af', fontSize: '0.8rem', fontFamily: 'monospace' }}>
-                                          {log.error}
-                                        </div>
-                                      </div>
-                                    )}
-                                    {log.attributes && Object.keys(log.attributes).length > 0 && (
-                                      <div style={{ gridColumn: '1 / -1' }}>
-                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginBottom: '4px' }}>ATTRIBUTES</div>
-                                        <pre style={{ background: 'var(--bg-surface-subtle)', padding: '10px', borderRadius: '6px', fontSize: '0.75rem', color: '#a78bfa', overflowX: 'auto', margin: 0 }}>
-                                          {JSON.stringify(log.attributes, null, 2)}
-                                        </pre>
-                                      </div>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
-                          </React.Fragment>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <ObservabilityLogsView
+              projects={projects}
+              gatewaysList={gatewaysList}
+              showBanner={showBanner}
+            />
           )}
 
           {/* TAB 5: Audit Trail Viewer */}

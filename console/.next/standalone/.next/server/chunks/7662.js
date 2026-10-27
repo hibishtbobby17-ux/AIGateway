@@ -1,4 +1,0 @@
-"use strict";exports.id=7662,exports.ids=[7662],exports.modules={7662:(t,e,r)=>{r.a(t,async(t,o)=>{try{r.d(e,{logAudit:()=>i});var s=r(469),a=t([s]);s=(a.then?(await a)():a)[0];let c=new Set(["secret","secret_hash","password","password_hash","client_secret","access_token","refresh_token","token","key","authorization"]);async function i(t){try{let e=t.diff?function t(e){if(null==e||"object"!=typeof e)return e;if(Array.isArray(e))return e.map(e=>t(e));let r={};for(let[o,s]of Object.entries(e))c.has(o.toLowerCase())||o.toLowerCase().includes("secret")||o.toLowerCase().includes("password")?r[o]="[REDACTED]":"object"==typeof s&&null!==s?r[o]=t(s):r[o]=s;return r}(t.diff):{};await s.d.query(`
-      INSERT INTO audit_logs (org_id, actor, action, target, timestamp, diff)
-      VALUES ($1, $2, $3, $4, NOW(), $5)
-    `,[t.orgId,t.actor||"system",t.action,t.target,JSON.stringify(e)])}catch(t){console.error("Failed to write audit log:",t)}}o()}catch(t){o(t)}})}};
