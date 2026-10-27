@@ -434,6 +434,6 @@ curl -I http://localhost:8080/healthz
 curl -I http://localhost:8082/healthz
 
 # 4. Run Automated Gateway Test Suite
-node verify_llm_gateway.cjs
-node verify_deploy_and_mcp.cjs
+node tests/integration/verify_llm_gateway.cjs
+node tests/integration/verify_deploy_and_mcp.cjs
 ```
