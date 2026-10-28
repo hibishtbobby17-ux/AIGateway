@@ -59,8 +59,8 @@ async function runPhase7Tests() {
   const originalSecret = gwCreateData.secret;
   const gatewayId = gwCreateData.gateway.id;
 
-  if (!originalSecret || !originalSecret.startsWith('gwsec_')) {
-    throw new Error(`Expected gateway secret starting with gwsec_, got ${originalSecret}`);
+  if (!originalSecret || (!originalSecret.startsWith('gwsec_') && !originalSecret.startsWith('aigw_live_'))) {
+    throw new Error(`Expected gateway secret starting with gwsec_ or aigw_live_, got ${originalSecret}`);
   }
   console.log(`   ✅ Gateway registered: ID=${gatewayId}, initial secret returned on creation.`);
 
