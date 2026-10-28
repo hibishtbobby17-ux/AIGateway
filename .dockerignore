@@ -16,3 +16,5 @@ web/node_modules/
 web/dist/
 deployments/compose/postgres_data/
 deployments/compose/clickhouse_data/
+*.md
+tests/

@@ -38,3 +38,8 @@ Thumbs.db
 node_modules/
 web/node_modules/
 
+# Markdown files
+*.md
+
+# Test folder & files
+tests/
