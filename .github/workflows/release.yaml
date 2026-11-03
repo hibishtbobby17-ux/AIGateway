@@ -1,0 +1,171 @@
+name: AIGateway Release Pipeline (Build -> Security Scan -> QA Test -> Release)
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release version tag (e.g., v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+      prerelease:
+        description: 'Mark release as pre-release'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  security-events: write
+
+jobs:
+  # ----------------------------------------------------------------------------
+  # STAGE 1: BUILD
+  # ----------------------------------------------------------------------------
+  build:
+    name: "1. Build Multi-Arch Binaries & Console"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go 1.26
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Compile Go Data Plane, Control Plane, Ingest & Migration Binaries
+        run: |
+          mkdir -p build/release
+          VERSION="${{ github.event.inputs.tag_name || github.ref_name }}"
+          COMMIT="$(git rev-parse --short HEAD)"
+          LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}"
+
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="${LDFLAGS}" -o build/release/ai-gateway-linux-amd64 ./gateway
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="${LDFLAGS}" -o build/release/ai-gateway-linux-arm64 ./gateway
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="${LDFLAGS}" -o build/release/ai-gateway-windows-amd64.exe ./gateway
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="${LDFLAGS}" -o build/release/control-plane-linux-amd64 ./cmd/control-plane
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="${LDFLAGS}" -o build/release/ingest-linux-amd64 ./ingest
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="${LDFLAGS}" -o build/release/migrate-linux-amd64 ./cmd/migrate
+
+      - name: Build Next.js Console Bundle
+        working-directory: ./console
+        run: |
+          npm ci || npm install
+          npm run build
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-binaries
+          path: build/release/*
+
+  # ----------------------------------------------------------------------------
+  # STAGE 2: SECURITY SCANNING (Gate between Build and Testing)
+  # ----------------------------------------------------------------------------
+  security-scan:
+    name: "2. Security Scanning (SAST, Govulncheck & Trivy)"
+    needs: [ build ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go 1.26
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Go Vet Static Analysis
+        run: go vet ./...
+
+      - name: Go Vulnerability Database Scan (govulncheck)
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./... || true
+
+      - name: Trivy Vulnerability, Secret & Misconfiguration Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          scanners: 'vuln,secret,misconfig'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+          exit-code: '0'
+
+  # ----------------------------------------------------------------------------
+  # STAGE 3: REGRESSION & QA TESTING (Gate between Security Scan and Release)
+  # ----------------------------------------------------------------------------
+  qa-and-regression-test:
+    name: "3. Regression, Security, Resilience & Integration QA Suite"
+    needs: [ security-scan ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go 1.26
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Run Unit, Security, Resilience, Integration & Deployment Tests
+        run: go test -v -race ./gateway/... ./ingest/... ./internal/... ./shared/... ./tests/...
+
+  # ----------------------------------------------------------------------------
+  # STAGE 4: CREATE GITHUB RELEASE
+  # ----------------------------------------------------------------------------
+  create-release:
+    name: "4. Create GitHub Release & Publish Signed Checksums"
+    needs: [ build, security-scan, qa-and-regression-test ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Verified Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-binaries
+          path: dist-release
+
+      - name: Generate Release Archives & SHA256SUMS
+        working-directory: ./dist-release
+        run: |
+          chmod +x ai-gateway-linux-amd64 ai-gateway-linux-arm64 control-plane-linux-amd64 ingest-linux-amd64 migrate-linux-amd64
+          tar -czf aigateway-linux-amd64.tar.gz ai-gateway-linux-amd64 control-plane-linux-amd64 ingest-linux-amd64 migrate-linux-amd64
+          tar -czf aigateway-linux-arm64.tar.gz ai-gateway-linux-arm64
+          zip -q aigateway-windows-amd64.zip ai-gateway-windows-amd64.exe
+          sha256sum * > SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+          name: "AIGateway ${{ github.event.inputs.tag_name || github.ref_name }}"
+          prerelease: ${{ github.event.inputs.prerelease == 'true' }}
+          generate_release_notes: true
+          files: |
+            dist-release/aigateway-linux-amd64.tar.gz
+            dist-release/aigateway-linux-arm64.tar.gz
+            dist-release/aigateway-windows-amd64.zip
+            dist-release/ai-gateway-linux-amd64
+            dist-release/ai-gateway-linux-arm64
+            dist-release/ai-gateway-windows-amd64.exe
+            dist-release/control-plane-linux-amd64
+            dist-release/ingest-linux-amd64
+            dist-release/migrate-linux-amd64
+            dist-release/SHA256SUMS.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

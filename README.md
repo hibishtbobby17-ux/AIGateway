@@ -1,6 +1,11 @@
-# AI Gateway & Observability Platform
+# AI Gateway & Observability Platform (`AIGateway`)
 
-A high-performance enterprise gateway and observability platform unifying the **Model Context Protocol (MCP)**, the **Agent-to-Agent (A2A)** protocol, and a **Universal Multi-Cloud LLM Gateway** with enterprise identity, fine-grained access control, distributed tracing, and resilient outbound networking.
+[![CI/CD Pipeline](https://github.com/hibishtbobby17-ux/AIGateway/actions/workflows/ci.yaml/badge.svg)](https://github.com/hibishtbobby17-ux/AIGateway/actions/workflows/ci.yaml)
+[![Release Pipeline](https://github.com/hibishtbobby17-ux/AIGateway/actions/workflows/release.yaml/badge.svg)](https://github.com/hibishtbobby17-ux/AIGateway/actions/workflows/release.yaml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Security Policy](https://img.shields.io/badge/Security-Policy-green.svg)](SECURITY.md)
+
+A high-performance enterprise AI gateway and observability platform unifying the **Model Context Protocol (MCP)**, the **Agent-to-Agent (A2A)** protocol, and a **Universal Multi-Cloud LLM Gateway** with enterprise identity (OAuth 2.1 PKCE / OIDC), AI guardrails, FinOps token attribution, fine-grained RBAC/ABAC access control, distributed tracing, and resilient outbound networking.
 
 ---
 
@@ -20,6 +25,7 @@ A high-performance enterprise gateway and observability platform unifying the **
    - [4. Enterprise Authentication (OAuth 2.1 PKCE & API Keys)](#4-enterprise-authentication-oauth-21-pkce--api-keys)
 6. [Architecture & Documentation Index](#architecture--documentation-index)
 7. [Verification & Health Checks](#verification--health-checks)
+8. [CI/CD Pipeline, Security & Bug Reporting, and License](#cicd-pipeline-security--bug-reporting-and-license)
 
 ---
 
@@ -76,8 +82,8 @@ Docker Compose starts the entire platform stack in containers with one command:
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/organization/project_alpha.git
-cd project_alpha
+git clone https://github.com/hibishtbobby17-ux/AIGateway.git
+cd AIGateway
 
 # 2. Initialize environment variables
 cp .env.example .env
@@ -101,7 +107,7 @@ docker compose ps
 
 ### Mode 2: Kubernetes Umbrella Helm Release (Production HA)
 
-For cloud production environments, use the single umbrella Helm chart ([deployments/helm/ai-gateway-platform](file:///c:/Users/Administrator/Downloads/project/project_alpha/deployments/helm/ai-gateway-platform)):
+For cloud production environments, use the single umbrella Helm chart ([`deployments/helm/ai-gateway-platform`](deployments/helm/ai-gateway-platform)):
 
 ```bash
 # 1. Add namespace
@@ -408,14 +414,14 @@ The platform supports multiple authentication methods:
 
 ## Architecture & Documentation Index
 
-All architectural designs, threat models, and operational specifications are stored in [`/docs`](file:///c:/Users/Administrator/Downloads/project/project_alpha/docs):
+All architectural designs, threat models, and operational specifications are stored in [`/docs`](docs):
 
-- **[System Architecture Overview](file:///c:/Users/Administrator/Downloads/project/project_alpha/docs/architecture/overview.md)**: C4 Level 1 & 2 diagrams, trust boundaries, and network flows.
-- **[Component Dependencies](file:///c:/Users/Administrator/Downloads/project/project_alpha/docs/architecture/component-dependencies.md)**: Package structures and dependency boundaries.
-- **[Domain Model & Persistence](file:///c:/Users/Administrator/Downloads/project/project_alpha/docs/architecture/domain-model.md)**: Database ERD, schemas, and task state machines.
-- **[Security Risk Register](file:///c:/Users/Administrator/Downloads/project/project_alpha/docs/security/risk-register.md)**: STRIDE threat model, SSRF egress protections, and cryptographic standards.
-- **[Deployment & Operations Guide](file:///c:/Users/Administrator/Downloads/project/project_alpha/docs/operations/deployment-guide.md)**: In-depth production runbooks, HA clustering, and zero-downtime rolling upgrades.
-- **[Architecture Decision Records (ADRs)](file:///c:/Users/Administrator/Downloads/project/project_alpha/docs/adr)**: ADR-0001 through ADR-0009 covering transports, persistence, and resilience.
+- **[System Architecture Overview](docs/architecture/overview.md)**: C4 Level 1 & 2 diagrams, trust boundaries, and network flows.
+- **[Component Dependencies](docs/architecture/component-dependencies.md)**: Package structures and dependency boundaries.
+- **[Domain Model & Persistence](docs/architecture/domain-model.md)**: Database ERD, schemas, and task state machines.
+- **[Security Risk Register](docs/security/risk-register.md)**: STRIDE threat model, SSRF egress protections, and cryptographic standards.
+- **[Deployment & Operations Guide](docs/operations/deployment-guide.md)**: In-depth production runbooks, HA clustering, and zero-downtime rolling upgrades.
+- **[Architecture Decision Records (ADRs)](docs/adr)**: ADR-0001 through ADR-0009 covering transports, persistence, and resilience.
 
 ---
 
@@ -434,6 +440,17 @@ curl -I http://localhost:8080/healthz
 curl -I http://localhost:8082/healthz
 
 # 4. Run Automated Gateway Test Suite
+go test -v ./gateway/... ./ingest/... ./internal/... ./shared/... ./tests/...
 node tests/integration/verify_llm_gateway.cjs
 node tests/integration/verify_deploy_and_mcp.cjs
 ```
+
+---
+
+## CI/CD Pipeline, Security & Bug Reporting, and License
+
+- **CI/CD & Release Pipeline**: Automated 4-stage pipeline ([`.github/workflows/ci.yaml`](.github/workflows/ci.yaml) and [`.github/workflows/release.yaml`](.github/workflows/release.yaml)) executing **Build** -> **Security Scanning** (`go vet`, `govulncheck`, Trivy FS scan, `npm audit`) -> **Regression & QA Testing** (Unit, Security, Resilience, Integration, Helm Smoke) -> **GitHub Release Creation**.
+- **Report a Bug**: Open a structured [Bug Report](https://github.com/hibishtbobby17-ux/AIGateway/issues/new?template=bug_report.md) via [`.github/ISSUE_TEMPLATE/bug_report.md`](.github/ISSUE_TEMPLATE/bug_report.md).
+- **Security Policy & Vulnerability Reporting**: Review [`SECURITY.md`](SECURITY.md) or submit a [Security Report](https://github.com/hibishtbobby17-ux/AIGateway/issues/new?template=security_report.md) / [Private Security Advisory](https://github.com/hibishtbobby17-ux/AIGateway/security/advisories/new).
+- **Code Ownership & Branch Protection**: All changes to `main` require a Pull Request ([`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md)) and explicit review approval from `@hibishtbobby17-ux` ([`.github/CODEOWNERS`](.github/CODEOWNERS)).
+- **License**: Licensed under the **[MIT License](LICENSE)**.

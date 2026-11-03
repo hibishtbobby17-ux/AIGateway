@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: "\U0001F6E1\uFE0F Report a Private Security Vulnerability"
+    url: https://github.com/hibishtbobby17-ux/AIGateway/security/advisories/new
+    about: Privately report critical or unpatched security vulnerabilities under our Security Policy (SECURITY.md).
+  - name: "\U0001F4DC Security Policy & SLA (SECURITY.md)"
+    url: https://github.com/hibishtbobby17-ux/AIGateway/blob/main/SECURITY.md
+    about: View supported versions, security architecture, and disclosure procedures.

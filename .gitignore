@@ -37,9 +37,10 @@ Thumbs.db
 # Frontend
 node_modules/
 web/node_modules/
+web/dist/
+web/package-lock.json
+console/node_modules/
+console/.next/
+console/out/
+console/package-lock.json
 
-# Markdown files
-*.md
-
-# Test folder & files
-tests/

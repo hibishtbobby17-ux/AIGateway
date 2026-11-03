@@ -1,14 +1,30 @@
-name: AIGateway CI Pipeline
+name: AIGateway CI/CD Pipeline (Build, Security Scan, Test & Release)
 
 on:
   push:
     branches: [ main ]
+    tags: [ 'v*.*.*' ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Optional release tag (e.g. v1.0.0) to publish a GitHub Release'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+  security-events: write
+  issues: read
+  pull-requests: read
 
 jobs:
-  test-go:
-    name: Test & Build Go Services (AIGateway, Control Plane & Ingest)
+  # ============================================================================
+  # PHASE 1: BUILD (Go Data Plane, Control Plane, Ingest, Migrate & Frontends)
+  # ============================================================================
+  build:
+    name: "Phase 1: Build Binaries & Console Bundles"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -20,25 +36,6 @@ jobs:
           go-version: '1.26'
           cache: true
 
-      - name: Build gateway & platform binaries
-        run: |
-          go build -v ./gateway
-          go build -v ./ingest
-          go build -v ./cmd/gateway
-          go build -v ./cmd/control-plane
-          go build -v ./cmd/migrate
-          go build -v ./cmd/dev-seed
-
-      - name: Run Go tests
-        run: go test -v ./gateway/... ./ingest/... ./internal/... ./shared/... ./tests/...
-
-  test-console:
-    name: Test & Build Console (Next.js / Node API)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -46,10 +43,169 @@ jobs:
           cache: 'npm'
           cache-dependency-path: console/package.json
 
-      - name: Install dependencies
-        working-directory: ./console
-        run: npm ci || npm install
+      - name: Build Go services & cross-architecture binaries
+        run: |
+          mkdir -p dist/bin
+          VERSION="${GITHUB_REF_NAME:-1.0.0}"
+          COMMIT="$(git rev-parse --short HEAD)"
+          LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}"
 
-      - name: Build console production bundle
+          # Standard platform binaries
+          go build -trimpath -ldflags="${LDFLAGS}" -o dist/bin/gateway ./cmd/gateway
+          go build -trimpath -ldflags="${LDFLAGS}" -o dist/bin/control-plane ./cmd/control-plane
+          go build -trimpath -ldflags="${LDFLAGS}" -o dist/bin/migrate ./cmd/migrate
+          go build -trimpath -ldflags="${LDFLAGS}" -o dist/bin/dev-seed ./cmd/dev-seed
+          go build -trimpath -ldflags="${LDFLAGS}" -o dist/bin/ingest ./ingest
+
+          # Multi-architecture standalone gateway binaries
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="${LDFLAGS}" -o dist/bin/ai-gateway-linux-amd64 ./gateway
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="${LDFLAGS}" -o dist/bin/ai-gateway-linux-arm64 ./gateway
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="${LDFLAGS}" -o dist/bin/ai-gateway-windows-amd64.exe ./gateway
+
+      - name: Build Next.js Management Console (console/)
         working-directory: ./console
-        run: npm run build
+        run: |
+          npm ci || npm install
+          npm run build
+
+      - name: Build Embedded Web UI (web/)
+        working-directory: ./web
+        run: |
+          rm -rf node_modules
+          npm install
+          npm run build
+
+      - name: Upload built release binaries artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aigateway-binaries
+          path: dist/bin/*
+          retention-days: 7
+
+  # ============================================================================
+  # PHASE 2: SECURITY SCANNING (Static Analysis, Vuln Check, Trivy & Dependency Audit)
+  # ============================================================================
+  security-scan:
+    name: "Phase 2: Security Scanning & Vulnerability Audit"
+    needs: [ build ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run Go Static Analysis (go vet)
+        run: go vet ./...
+
+      - name: Run Go Vulnerability Scanner (govulncheck)
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./... || true
+
+      - name: Run Trivy Filesystem Vulnerability & Secret Scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          scanners: 'vuln,secret,misconfig'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+          exit-code: '0'
+
+      - name: Audit Frontend Dependencies (npm audit)
+        working-directory: ./console
+        run: |
+          npm install --package-lock-only --no-audit
+          npm audit --omit=dev --audit-level=critical || true
+
+  # ============================================================================
+  # PHASE 3: TESTING & QA (Unit, Integration, Security, Resilience & Deployment)
+  # ============================================================================
+  test:
+    name: "Phase 3: Regression, Security & QA Testing"
+    needs: [ security-scan ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: "3.1 Run Go Unit Tests (Gateway, Ingest & Internal Packages)"
+        run: go test -v -race ./gateway/... ./ingest/... ./internal/... ./shared/...
+
+      - name: "3.2 Run Automated Security Test Suite (OAuth 2.1 PKCE, Tenant Isolation, Token Revocation)"
+        run: go test -v -race ./tests/security/...
+
+      - name: "3.3 Run Resilience, Chaos & Load Test Suite"
+        run: go test -v ./tests/resilience/... ./tests/load/...
+
+      - name: "3.4 Run End-to-End Integration Test Suite (MCP, A2A, Console Admin, Observability)"
+        run: go test -v ./tests/integration/...
+
+      - name: "3.5 Run Deployment & Helm Chart Smoke Tests"
+        run: go test -v ./tests/deployment/...
+
+  # ============================================================================
+  # PHASE 4: CREATE RELEASE (Package Checksums, Artifacts & Publish GitHub Release)
+  # ============================================================================
+  release:
+    name: "Phase 4: Package & Create GitHub Release"
+    needs: [ build, security-scan, test ]
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download verified binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: aigateway-binaries
+          path: release-assets
+
+      - name: Package archives & generate SHA-256 checksums
+        working-directory: ./release-assets
+        run: |
+          chmod +x gateway control-plane migrate dev-seed ingest ai-gateway-linux-amd64 ai-gateway-linux-arm64
+          tar -czf aigateway-platform-linux-amd64.tar.gz gateway control-plane migrate dev-seed ingest ai-gateway-linux-amd64
+          tar -czf aigateway-platform-linux-arm64.tar.gz ai-gateway-linux-arm64
+          zip -q aigateway-windows-amd64.zip ai-gateway-windows-amd64.exe
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_version || github.ref_name }}
+          name: "AIGateway Release ${{ github.event.inputs.release_version || github.ref_name }}"
+          generate_release_notes: true
+          files: |
+            release-assets/aigateway-platform-linux-amd64.tar.gz
+            release-assets/aigateway-platform-linux-arm64.tar.gz
+            release-assets/aigateway-windows-amd64.zip
+            release-assets/ai-gateway-linux-amd64
+            release-assets/ai-gateway-linux-arm64
+            release-assets/ai-gateway-windows-amd64.exe
+            release-assets/SHA256SUMS.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
