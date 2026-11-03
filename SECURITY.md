@@ -71,3 +71,4 @@ Every commit, pull request, and release runs through the automated security phas
 - **Go Static Analysis & Vulnerability Scanning**: `go vet ./...` and `govulncheck ./...`
 - **Filesystem & Dependency CVE Scanning**: Trivy vulnerability scanner (`aquasecurity/trivy-action`) & `npm audit`
 - **Automated Security Test Suite**: `go test -v ./tests/security/...` verifying OAuth 2.1 PKCE enforcement, client secret authentication, cross-tenant isolation, and token revocation/tampering rejection.
+
