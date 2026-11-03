@@ -9,12 +9,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"project_alpha/internal/api/middleware"
-	"project_alpha/internal/audit"
-	"project_alpha/internal/identity/delegation"
-	"project_alpha/internal/identity/principal"
-	mcpregistry "project_alpha/internal/mcp/registry"
-	"project_alpha/internal/mcp/upstream"
+	"AIGateway/internal/api/middleware"
+	"AIGateway/internal/audit"
+	"AIGateway/internal/identity/delegation"
+	"AIGateway/internal/identity/principal"
+	mcpregistry "AIGateway/internal/mcp/registry"
+	"AIGateway/internal/mcp/upstream"
 )
 
 // HandleMCPServers routes MCP server management endpoints:

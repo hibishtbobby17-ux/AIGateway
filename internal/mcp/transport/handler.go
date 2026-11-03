@@ -7,12 +7,12 @@ import (
 	"io"
 	"net/http"
 
-	"project_alpha/internal/identity/principal"
-	"project_alpha/internal/mcp/aggregation"
-	"project_alpha/internal/mcp/protocol"
-	"project_alpha/internal/mcp/session"
-	"project_alpha/internal/observability/correlation"
-	"project_alpha/internal/policy"
+	"AIGateway/internal/identity/principal"
+	"AIGateway/internal/mcp/aggregation"
+	"AIGateway/internal/mcp/protocol"
+	"AIGateway/internal/mcp/session"
+	"AIGateway/internal/observability/correlation"
+	"AIGateway/internal/policy"
 )
 
 // GatewayHandler handles MCP SSE and HTTP message routing.

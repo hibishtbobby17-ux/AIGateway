@@ -8,12 +8,12 @@ import (
 
 	"github.com/google/uuid"
 
-	"project_alpha/internal/api/middleware"
-	"project_alpha/internal/audit"
-	"project_alpha/internal/identity/idp"
-	"project_alpha/internal/identity/oidc"
-	"project_alpha/internal/identity/principal"
-	"project_alpha/internal/identity/tokens"
+	"AIGateway/internal/api/middleware"
+	"AIGateway/internal/audit"
+	"AIGateway/internal/identity/idp"
+	"AIGateway/internal/identity/oidc"
+	"AIGateway/internal/identity/principal"
+	"AIGateway/internal/identity/tokens"
 )
 
 // SSOProviderRequest represents an incoming payload to register or update an external IdP.

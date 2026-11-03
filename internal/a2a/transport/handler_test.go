@@ -10,17 +10,17 @@ import (
 	"strings"
 	"testing"
 
-	"project_alpha/internal/a2a/protocol"
-	"project_alpha/internal/a2a/registry"
-	"project_alpha/internal/a2a/routing"
-	"project_alpha/internal/a2a/tasks"
-	"project_alpha/internal/a2a/transport"
-	"project_alpha/internal/audit"
-	"project_alpha/internal/config"
-	"project_alpha/internal/identity/principal"
-	"project_alpha/internal/policy"
-	"project_alpha/internal/storage"
-	"project_alpha/migrations"
+	"AIGateway/internal/a2a/protocol"
+	"AIGateway/internal/a2a/registry"
+	"AIGateway/internal/a2a/routing"
+	"AIGateway/internal/a2a/tasks"
+	"AIGateway/internal/a2a/transport"
+	"AIGateway/internal/audit"
+	"AIGateway/internal/config"
+	"AIGateway/internal/identity/principal"
+	"AIGateway/internal/policy"
+	"AIGateway/internal/storage"
+	"AIGateway/migrations"
 )
 
 type testEnv struct {

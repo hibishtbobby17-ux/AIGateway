@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"project_alpha/internal/identity/delegation"
-	"project_alpha/internal/mcp/upstream"
+	"AIGateway/internal/identity/delegation"
+	"AIGateway/internal/mcp/upstream"
 )
 
 var (

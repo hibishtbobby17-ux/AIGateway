@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"project_alpha/internal/observability/model"
+	"AIGateway/internal/observability/model"
 )
 
 // ComputeObservedTopology computes nodes, edges, and statistics from a slice of spans.

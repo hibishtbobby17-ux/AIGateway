@@ -1,6 +1,7 @@
 {
-  "name": "ai-console",
+  "name": "aigateway-console",
   "version": "1.0.0",
+  "description": "AIGateway Enterprise Management Console & Control Plane for Multi-Cloud LLM Gateways, MCP Federation, A2A Agents, AI Guardrails, and Observability",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",

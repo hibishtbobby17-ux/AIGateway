@@ -8,9 +8,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"project_alpha/internal/observability/model"
-	"project_alpha/internal/observability/redaction"
-	"project_alpha/internal/observability/storage"
+	"AIGateway/internal/observability/model"
+	"AIGateway/internal/observability/redaction"
+	"AIGateway/internal/observability/storage"
 )
 
 // Sampler determines whether a span should be sampled for persistence.

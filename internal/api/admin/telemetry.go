@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"project_alpha/internal/api/middleware"
-	"project_alpha/internal/identity/principal"
-	"project_alpha/internal/observability/model"
-	obsstorage "project_alpha/internal/observability/storage"
+	"AIGateway/internal/api/middleware"
+	"AIGateway/internal/identity/principal"
+	"AIGateway/internal/observability/model"
+	obsstorage "AIGateway/internal/observability/storage"
 )
 
 // HandleTraces routes distributed trace search and waterfall endpoints:

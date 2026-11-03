@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"project_alpha/internal/mcp/protocol"
-	"project_alpha/internal/mcp/registry"
+	"AIGateway/internal/mcp/protocol"
+	"AIGateway/internal/mcp/registry"
 )
 
 // NamespaceDelimiter separates server prefix from tool/resource name.

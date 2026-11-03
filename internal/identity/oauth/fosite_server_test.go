@@ -17,12 +17,12 @@ import (
 	"github.com/ory/fosite/handler/oauth2"
 	"github.com/ory/fosite/token/jwt"
 
-	"project_alpha/internal/config"
-	"project_alpha/internal/identity/keys"
-	"project_alpha/internal/identity/tokens"
-	"project_alpha/internal/storage"
-	"project_alpha/internal/tenants"
-	"project_alpha/migrations"
+	"AIGateway/internal/config"
+	"AIGateway/internal/identity/keys"
+	"AIGateway/internal/identity/tokens"
+	"AIGateway/internal/storage"
+	"AIGateway/internal/tenants"
+	"AIGateway/migrations"
 )
 
 func newTestSQLStore(t *testing.T) (*SQLStore, func()) {

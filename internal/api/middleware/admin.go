@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"project_alpha/internal/audit"
-	"project_alpha/internal/identity/principal"
+	"AIGateway/internal/audit"
+	"AIGateway/internal/identity/principal"
 )
 
 // RequireRoles returns a middleware that verifies the authenticated caller possesses

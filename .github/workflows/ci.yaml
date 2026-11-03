@@ -1,4 +1,4 @@
-name: CI Pipeline
+name: AIGateway CI Pipeline
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
 
 jobs:
   test-go:
-    name: Test & Build Go Services (Gateway & Ingest)
+    name: Test & Build Go Services (AIGateway, Control Plane & Ingest)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -20,14 +20,17 @@ jobs:
           go-version: '1.26'
           cache: true
 
-      - name: Build gateway binary
-        run: go build -v ./gateway
-
-      - name: Build ingest binary
-        run: go build -v ./ingest
+      - name: Build gateway & platform binaries
+        run: |
+          go build -v ./gateway
+          go build -v ./ingest
+          go build -v ./cmd/gateway
+          go build -v ./cmd/control-plane
+          go build -v ./cmd/migrate
+          go build -v ./cmd/dev-seed
 
       - name: Run Go tests
-        run: go test -v ./gateway/... ./ingest/...
+        run: go test -v ./gateway/... ./ingest/... ./internal/... ./shared/... ./tests/...
 
   test-console:
     name: Test & Build Console (Next.js / Node API)

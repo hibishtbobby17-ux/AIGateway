@@ -17,7 +17,7 @@ import (
 	"github.com/ory/fosite/handler/oauth2"
 	"github.com/ory/fosite/token/jwt"
 
-	"project_alpha/internal/identity/keys"
+	"AIGateway/internal/identity/keys"
 )
 
 // FositeServer exposes OAuth endpoints backed by Fosite and SQLStore.

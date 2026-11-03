@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"project_alpha/internal/a2a/protocol"
-	"project_alpha/internal/a2a/tasks"
-	"project_alpha/internal/config"
-	"project_alpha/internal/storage"
-	"project_alpha/migrations"
+	"AIGateway/internal/a2a/protocol"
+	"AIGateway/internal/a2a/tasks"
+	"AIGateway/internal/config"
+	"AIGateway/internal/storage"
+	"AIGateway/migrations"
 )
 
 func setupTestStore(t *testing.T) *tasks.SQLStore {

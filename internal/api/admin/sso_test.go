@@ -9,14 +9,14 @@ import (
 	"testing"
 	"time"
 
-	"project_alpha/internal/api/admin"
-	"project_alpha/internal/config"
-	"project_alpha/internal/identity/idp"
-	"project_alpha/internal/identity/keys"
-	"project_alpha/internal/identity/oidc"
-	"project_alpha/internal/identity/principal"
-	"project_alpha/internal/storage"
-	"project_alpha/migrations"
+	"AIGateway/internal/api/admin"
+	"AIGateway/internal/config"
+	"AIGateway/internal/identity/idp"
+	"AIGateway/internal/identity/keys"
+	"AIGateway/internal/identity/oidc"
+	"AIGateway/internal/identity/principal"
+	"AIGateway/internal/storage"
+	"AIGateway/migrations"
 )
 
 func setupSSOTestHandler(t *testing.T) (*admin.Handler, *oidc.SQLProviderRepository, idp.UserRepository) {

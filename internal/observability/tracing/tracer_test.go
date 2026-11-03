@@ -7,8 +7,8 @@ import (
 	"sync"
 	"testing"
 
-	"project_alpha/internal/observability/model"
-	"project_alpha/internal/observability/tracing"
+	"AIGateway/internal/observability/model"
+	"AIGateway/internal/observability/tracing"
 )
 
 type testSpanSink struct {

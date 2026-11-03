@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"project_alpha/internal/identity/delegation"
-	"project_alpha/internal/identity/keys"
-	"project_alpha/internal/identity/principal"
-	"project_alpha/internal/identity/tokens"
+	"AIGateway/internal/identity/delegation"
+	"AIGateway/internal/identity/keys"
+	"AIGateway/internal/identity/principal"
+	"AIGateway/internal/identity/tokens"
 )
 
 func TestTokenExchanger(t *testing.T) {

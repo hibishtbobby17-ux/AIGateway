@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"project_alpha/internal/observability/model"
-	"project_alpha/internal/observability/pipeline"
-	"project_alpha/internal/observability/storage"
+	"AIGateway/internal/observability/model"
+	"AIGateway/internal/observability/pipeline"
+	"AIGateway/internal/observability/storage"
 )
 
 type mockTraceStore struct {

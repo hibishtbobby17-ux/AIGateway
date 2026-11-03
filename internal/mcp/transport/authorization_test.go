@@ -8,13 +8,13 @@ import (
 	"testing"
 	"time"
 
-	"project_alpha/internal/identity/principal"
-	"project_alpha/internal/mcp/aggregation"
-	"project_alpha/internal/mcp/protocol"
-	"project_alpha/internal/mcp/registry"
-	"project_alpha/internal/mcp/session"
-	"project_alpha/internal/mcp/upstream"
-	"project_alpha/internal/policy"
+	"AIGateway/internal/identity/principal"
+	"AIGateway/internal/mcp/aggregation"
+	"AIGateway/internal/mcp/protocol"
+	"AIGateway/internal/mcp/registry"
+	"AIGateway/internal/mcp/session"
+	"AIGateway/internal/mcp/upstream"
+	"AIGateway/internal/policy"
 )
 
 func TestPolicyFiltersMCPDiscoveryAndBlocksInvocation(t *testing.T) {

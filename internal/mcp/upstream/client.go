@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"project_alpha/internal/identity/delegation"
-	"project_alpha/internal/mcp/protocol"
-	"project_alpha/internal/resilience"
+	"AIGateway/internal/identity/delegation"
+	"AIGateway/internal/mcp/protocol"
+	"AIGateway/internal/resilience"
 )
 
 // Client defines the upstream MCP server contract.

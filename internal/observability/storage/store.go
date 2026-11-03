@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"project_alpha/internal/observability/model"
+	"AIGateway/internal/observability/model"
 )
 
 var (

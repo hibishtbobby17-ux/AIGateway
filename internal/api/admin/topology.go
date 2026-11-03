@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"time"
 
-	"project_alpha/internal/api/middleware"
-	"project_alpha/internal/identity/principal"
-	"project_alpha/internal/observability/model"
+	"AIGateway/internal/api/middleware"
+	"AIGateway/internal/identity/principal"
+	"AIGateway/internal/observability/model"
 )
 
 // HandleGetConfiguredTopology returns the static registered topology of the tenant.

@@ -10,14 +10,14 @@ import (
 	"testing"
 	"time"
 
-	"project_alpha/internal/a2a/protocol"
-	"project_alpha/internal/a2a/registry"
-	"project_alpha/internal/a2a/routing"
-	"project_alpha/internal/a2a/tasks"
-	"project_alpha/internal/config"
-	"project_alpha/internal/identity/delegation"
-	"project_alpha/internal/storage"
-	"project_alpha/migrations"
+	"AIGateway/internal/a2a/protocol"
+	"AIGateway/internal/a2a/registry"
+	"AIGateway/internal/a2a/routing"
+	"AIGateway/internal/a2a/tasks"
+	"AIGateway/internal/config"
+	"AIGateway/internal/identity/delegation"
+	"AIGateway/internal/storage"
+	"AIGateway/migrations"
 )
 
 func setupTestEnvironment(t *testing.T) (registry.Registry, tasks.Store) {

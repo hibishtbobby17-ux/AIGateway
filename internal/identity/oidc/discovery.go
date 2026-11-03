@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"project_alpha/internal/resilience"
+	"AIGateway/internal/resilience"
 )
 
 var (

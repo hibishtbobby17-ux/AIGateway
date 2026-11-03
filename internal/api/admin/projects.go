@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"project_alpha/internal/api/middleware"
-	"project_alpha/internal/identity/principal"
-	"project_alpha/internal/tenants"
+	"AIGateway/internal/api/middleware"
+	"AIGateway/internal/identity/principal"
+	"AIGateway/internal/tenants"
 )
 
 // HandleProjects routes tenant-scoped project management endpoints:

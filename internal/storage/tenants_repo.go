@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"project_alpha/internal/tenants"
+	"AIGateway/internal/tenants"
 )
 
 // SQLTenantRepository implements tenants.Repository using a standard *sql.DB handle.

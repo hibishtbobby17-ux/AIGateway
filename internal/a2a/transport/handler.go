@@ -11,14 +11,14 @@ import (
 	"strings"
 	"time"
 
-	"project_alpha/internal/a2a/protocol"
-	"project_alpha/internal/a2a/registry"
-	"project_alpha/internal/a2a/routing"
-	"project_alpha/internal/a2a/tasks"
-	"project_alpha/internal/audit"
-	"project_alpha/internal/identity/principal"
-	"project_alpha/internal/observability/correlation"
-	"project_alpha/internal/policy"
+	"AIGateway/internal/a2a/protocol"
+	"AIGateway/internal/a2a/registry"
+	"AIGateway/internal/a2a/routing"
+	"AIGateway/internal/a2a/tasks"
+	"AIGateway/internal/audit"
+	"AIGateway/internal/identity/principal"
+	"AIGateway/internal/observability/correlation"
+	"AIGateway/internal/policy"
 )
 
 // Handler implements HTTP routing for the A2A v1 protocol.

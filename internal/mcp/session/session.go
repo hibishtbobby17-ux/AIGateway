@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"project_alpha/internal/mcp/protocol"
+	"AIGateway/internal/mcp/protocol"
 )
 
 // Session represents an active MCP client connection.

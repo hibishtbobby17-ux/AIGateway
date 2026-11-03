@@ -4,11 +4,11 @@ import (
 	"context"
 	"testing"
 
-	"project_alpha/internal/a2a/protocol"
-	"project_alpha/internal/a2a/registry"
-	"project_alpha/internal/config"
-	"project_alpha/internal/storage"
-	"project_alpha/migrations"
+	"AIGateway/internal/a2a/protocol"
+	"AIGateway/internal/a2a/registry"
+	"AIGateway/internal/config"
+	"AIGateway/internal/storage"
+	"AIGateway/migrations"
 )
 
 func setupTestDB(t *testing.T) *registry.SQLRegistry {

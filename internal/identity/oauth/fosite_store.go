@@ -14,7 +14,7 @@ import (
 	"github.com/ory/fosite/handler/oauth2"
 	"github.com/ory/fosite/handler/pkce"
 
-	"project_alpha/internal/identity/tokens"
+	"AIGateway/internal/identity/tokens"
 )
 
 const (

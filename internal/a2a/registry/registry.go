@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"project_alpha/internal/a2a/protocol"
+	"AIGateway/internal/a2a/protocol"
 )
 
 var (

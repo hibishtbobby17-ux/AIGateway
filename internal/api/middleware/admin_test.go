@@ -6,9 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"project_alpha/internal/api/middleware"
-	"project_alpha/internal/audit"
-	"project_alpha/internal/identity/principal"
+	"AIGateway/internal/api/middleware"
+	"AIGateway/internal/audit"
+	"AIGateway/internal/identity/principal"
 )
 
 type mockAuditRecorder struct {

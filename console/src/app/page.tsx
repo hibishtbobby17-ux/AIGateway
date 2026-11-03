@@ -16,6 +16,7 @@ import AgentsRegistryView from './components/AgentsRegistryView';
 import DeploySettingsView from './components/DeploySettingsView';
 import ConsoleConfigView from './components/ConsoleConfigView';
 import LLMGatewayView from './components/LLMGatewayView';
+import FinOpsView from './components/FinOpsView';
 import ObservabilityLogsView from './components/ObservabilityLogsView';
 
 interface User {
@@ -1432,6 +1433,32 @@ export default function ConsoleDashboard() {
             <span className="badge badge-indigo" style={{ fontSize: '0.65rem' }}>Multi-Cloud</span>
           </button>
 
+          {/* 6.5. FinOps & Cost Analytics */}
+          <button
+            onClick={() => setActiveTab('finops')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '10px 14px',
+              borderRadius: 'var(--radius-sm)',
+              border: activeTab === 'finops' ? '1px solid var(--border-strong)' : '1px solid transparent',
+              background: activeTab === 'finops' ? 'var(--primary-subtle)' : 'transparent',
+              color: activeTab === 'finops' ? 'var(--primary-text)' : 'var(--text-main)',
+              fontWeight: activeTab === 'finops' ? 700 : 500,
+              cursor: 'pointer',
+              textAlign: 'left',
+              width: '100%',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '1.1rem' }}>💰</span>
+              <span style={{ fontSize: '0.88rem' }}>FinOps & Cost</span>
+            </div>
+            <span className="badge badge-emerald" style={{ fontSize: '0.65rem' }}>Task $</span>
+          </button>
+
           {/* 7. Settings (with Submenus: deploy & console config) */}
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <button
@@ -1678,6 +1705,13 @@ export default function ConsoleDashboard() {
           {/* 6.1 LLM GATEWAY PAGE */}
           {activeTab === 'llm-gateway' && (
             <LLMGatewayView
+              showBanner={showBanner}
+            />
+          )}
+
+          {/* 6.5 FINOPS & TASK COST ANALYTICS PAGE */}
+          {activeTab === 'finops' && (
+            <FinOpsView
               showBanner={showBanner}
             />
           )}

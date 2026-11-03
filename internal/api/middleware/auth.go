@@ -7,11 +7,11 @@ import (
 	"net/http"
 	"strings"
 
-	"project_alpha/internal/identity/delegation"
-	"project_alpha/internal/identity/principal"
-	"project_alpha/internal/identity/tokens"
-	"project_alpha/internal/observability/correlation"
-	"project_alpha/internal/policy"
+	"AIGateway/internal/identity/delegation"
+	"AIGateway/internal/identity/principal"
+	"AIGateway/internal/identity/tokens"
+	"AIGateway/internal/observability/correlation"
+	"AIGateway/internal/policy"
 )
 
 type authContextKey string

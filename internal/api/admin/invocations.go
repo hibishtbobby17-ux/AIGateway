@@ -5,10 +5,10 @@ import (
 	"strconv"
 	"strings"
 
-	"project_alpha/internal/a2a/protocol"
-	"project_alpha/internal/api/middleware"
-	"project_alpha/internal/identity/principal"
-	obsstorage "project_alpha/internal/observability/storage"
+	"AIGateway/internal/a2a/protocol"
+	"AIGateway/internal/api/middleware"
+	"AIGateway/internal/identity/principal"
+	obsstorage "AIGateway/internal/observability/storage"
 )
 
 // HandleA2ATasks routes A2A task history and event timeline endpoints:

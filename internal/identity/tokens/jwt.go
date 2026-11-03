@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"project_alpha/internal/identity/keys"
+	"AIGateway/internal/identity/keys"
 )
 
 var (

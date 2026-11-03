@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"project_alpha/internal/config"
-	"project_alpha/internal/tenants"
-	"project_alpha/migrations"
+	"AIGateway/internal/config"
+	"AIGateway/internal/tenants"
+	"AIGateway/migrations"
 )
 
 func TestSQLiteDatabaseMigrationsAndRepository(t *testing.T) {

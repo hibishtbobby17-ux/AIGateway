@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"project_alpha/internal/resilience"
+	"AIGateway/internal/resilience"
 )
 
 // ============================================================================

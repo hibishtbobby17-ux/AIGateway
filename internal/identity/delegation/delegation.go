@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"project_alpha/internal/identity/keys"
-	"project_alpha/internal/identity/principal"
-	"project_alpha/internal/identity/tokens"
+	"AIGateway/internal/identity/keys"
+	"AIGateway/internal/identity/principal"
+	"AIGateway/internal/identity/tokens"
 )
 
 var (

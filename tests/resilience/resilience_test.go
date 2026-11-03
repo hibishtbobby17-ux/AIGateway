@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"project_alpha/internal/api/health"
-	"project_alpha/internal/resilience"
+	"AIGateway/internal/api/health"
+	"AIGateway/internal/resilience"
 )
 
 // ============================================================================

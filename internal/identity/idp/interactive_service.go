@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"project_alpha/internal/identity/oauth"
-	"project_alpha/internal/identity/principal"
+	"AIGateway/internal/identity/oauth"
+	"AIGateway/internal/identity/principal"
 )
 
 const (

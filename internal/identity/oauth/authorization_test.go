@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	"project_alpha/internal/identity/principal"
+	"AIGateway/internal/identity/principal"
 )
 
 func TestSQLAuthorizationServiceRequiresIdentityTenantAndConsent(t *testing.T) {

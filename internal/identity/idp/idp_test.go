@@ -9,12 +9,12 @@ import (
 	"strings"
 	"testing"
 
-	"project_alpha/internal/config"
-	"project_alpha/internal/identity/idp"
-	"project_alpha/internal/identity/oauth"
-	"project_alpha/internal/storage"
-	"project_alpha/internal/tenants"
-	"project_alpha/migrations"
+	"AIGateway/internal/config"
+	"AIGateway/internal/identity/idp"
+	"AIGateway/internal/identity/oauth"
+	"AIGateway/internal/storage"
+	"AIGateway/internal/tenants"
+	"AIGateway/migrations"
 )
 
 func TestBuiltInIdP_UserRegistrationAndAuthentication(t *testing.T) {

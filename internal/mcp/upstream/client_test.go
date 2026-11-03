@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"project_alpha/internal/identity/delegation"
-	"project_alpha/internal/identity/keys"
-	"project_alpha/internal/identity/principal"
-	"project_alpha/internal/mcp/protocol"
-	"project_alpha/internal/mcp/upstream"
+	"AIGateway/internal/identity/delegation"
+	"AIGateway/internal/identity/keys"
+	"AIGateway/internal/identity/principal"
+	"AIGateway/internal/mcp/protocol"
+	"AIGateway/internal/mcp/upstream"
 )
 
 func TestHTTPClient_DownstreamCredentialsAndAntiRelay(t *testing.T) {

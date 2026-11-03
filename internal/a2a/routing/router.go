@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"project_alpha/internal/a2a/protocol"
-	"project_alpha/internal/a2a/registry"
-	"project_alpha/internal/a2a/tasks"
-	"project_alpha/internal/identity/delegation"
+	"AIGateway/internal/a2a/protocol"
+	"AIGateway/internal/a2a/registry"
+	"AIGateway/internal/a2a/tasks"
+	"AIGateway/internal/identity/delegation"
 )
 
 var (

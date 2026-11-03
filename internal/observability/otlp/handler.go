@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"project_alpha/internal/identity/principal"
-	"project_alpha/internal/observability/model"
-	"project_alpha/internal/observability/pipeline"
+	"AIGateway/internal/identity/principal"
+	"AIGateway/internal/observability/model"
+	"AIGateway/internal/observability/pipeline"
 )
 
 // IngestionHandler handles standard OTLP/HTTP JSON telemetry exports.

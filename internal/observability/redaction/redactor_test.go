@@ -3,8 +3,8 @@ package redaction_test
 import (
 	"testing"
 
-	"project_alpha/internal/observability/model"
-	"project_alpha/internal/observability/redaction"
+	"AIGateway/internal/observability/model"
+	"AIGateway/internal/observability/redaction"
 )
 
 func TestRedactor_RedactSpanAndLog(t *testing.T) {

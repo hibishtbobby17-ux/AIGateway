@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"project_alpha/internal/a2a/protocol"
-	a2aregistry "project_alpha/internal/a2a/registry"
-	"project_alpha/internal/api/middleware"
-	"project_alpha/internal/audit"
-	"project_alpha/internal/identity/principal"
+	"AIGateway/internal/a2a/protocol"
+	a2aregistry "AIGateway/internal/a2a/registry"
+	"AIGateway/internal/api/middleware"
+	"AIGateway/internal/audit"
+	"AIGateway/internal/identity/principal"
 )
 
 // HandleAgents routes A2A agent management endpoints:

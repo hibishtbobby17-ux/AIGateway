@@ -7,9 +7,9 @@ import (
 	"os"
 	"time"
 
-	"project_alpha/internal/config"
-	"project_alpha/internal/storage"
-	"project_alpha/migrations"
+	"AIGateway/internal/config"
+	"AIGateway/internal/storage"
+	"AIGateway/migrations"
 )
 
 func main() {

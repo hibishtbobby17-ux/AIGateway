@@ -14,10 +14,10 @@ import (
 	"sync"
 	"time"
 
-	"project_alpha/internal/a2a/protocol"
-	"project_alpha/internal/identity/delegation"
-	"project_alpha/internal/observability/correlation"
-	"project_alpha/internal/resilience"
+	"AIGateway/internal/a2a/protocol"
+	"AIGateway/internal/identity/delegation"
+	"AIGateway/internal/observability/correlation"
+	"AIGateway/internal/resilience"
 )
 
 var (

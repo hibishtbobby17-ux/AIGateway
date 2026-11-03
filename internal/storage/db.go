@@ -9,7 +9,7 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "modernc.org/sqlite"
-	"project_alpha/internal/config"
+	"AIGateway/internal/config"
 )
 
 // OpenDB initializes and returns a pooled SQL database handle.

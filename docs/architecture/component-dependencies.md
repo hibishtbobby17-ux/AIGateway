@@ -15,7 +15,7 @@ To prevent coupling and maintain strict separation of concerns, the platform enf
 ## 2. Monorepo Package Layout
 
 ```
-project_alpha/
+AIGateway/
 ├── cmd/
 │   ├── gateway/                  # Gateway binary entry point (MCP + A2A + Ingress)
 │   ├── control-plane/            # Control plane administrative API & Console server

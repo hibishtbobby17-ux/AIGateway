@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"project_alpha/internal/identity/principal"
-	"project_alpha/internal/observability/correlation"
-	"project_alpha/internal/observability/model"
+	"AIGateway/internal/identity/principal"
+	"AIGateway/internal/observability/correlation"
+	"AIGateway/internal/observability/model"
 )
 
 // SpanSink receives completed spans for processing or buffering.

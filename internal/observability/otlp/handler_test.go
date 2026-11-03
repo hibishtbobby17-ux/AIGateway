@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"project_alpha/internal/observability/otlp"
-	"project_alpha/internal/observability/pipeline"
-	"project_alpha/internal/observability/storage"
+	"AIGateway/internal/observability/otlp"
+	"AIGateway/internal/observability/pipeline"
+	"AIGateway/internal/observability/storage"
 )
 
 func TestOTLPHandler_IngestTracesAndLogs(t *testing.T) {

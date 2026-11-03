@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"project_alpha/internal/identity/delegation"
+	"AIGateway/internal/identity/delegation"
 )
 
 // SQLRegistry implements Registry backed by SQLite or PostgreSQL.

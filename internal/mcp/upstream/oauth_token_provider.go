@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"project_alpha/internal/identity/delegation"
-	"project_alpha/internal/resilience"
+	"AIGateway/internal/identity/delegation"
+	"AIGateway/internal/resilience"
 )
 
 var (

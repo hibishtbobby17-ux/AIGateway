@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"project_alpha/internal/identity/idp"
-	"project_alpha/internal/identity/principal"
-	"project_alpha/internal/identity/tokens"
+	"AIGateway/internal/identity/idp"
+	"AIGateway/internal/identity/principal"
+	"AIGateway/internal/identity/tokens"
 )
 
 // LoginRequest defines credentials submitted to /api/v1/auth/login.

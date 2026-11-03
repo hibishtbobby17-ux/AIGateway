@@ -8,14 +8,14 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"project_alpha/internal/api/admin"
-	"project_alpha/internal/config"
-	"project_alpha/internal/identity/idp"
-	"project_alpha/internal/identity/keys"
-	"project_alpha/internal/identity/principal"
-	"project_alpha/internal/storage"
-	"project_alpha/internal/tenants"
-	"project_alpha/migrations"
+	"AIGateway/internal/api/admin"
+	"AIGateway/internal/config"
+	"AIGateway/internal/identity/idp"
+	"AIGateway/internal/identity/keys"
+	"AIGateway/internal/identity/principal"
+	"AIGateway/internal/storage"
+	"AIGateway/internal/tenants"
+	"AIGateway/migrations"
 )
 
 func setupAuthTest(t *testing.T) (*admin.Handler, idp.UserRepository) {

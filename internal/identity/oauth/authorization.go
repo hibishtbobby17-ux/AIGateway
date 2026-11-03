@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"project_alpha/internal/identity/principal"
+	"AIGateway/internal/identity/principal"
 )
 
 var (

@@ -3,7 +3,7 @@ package redaction
 import (
 	"strings"
 
-	"project_alpha/internal/observability/model"
+	"AIGateway/internal/observability/model"
 )
 
 var defaultSensitiveKeys = map[string]bool{

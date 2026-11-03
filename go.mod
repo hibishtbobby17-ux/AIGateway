@@ -1,4 +1,4 @@
-module project_alpha
+module AIGateway
 
 go 1.26.0
 

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"project_alpha/internal/resilience"
+	"AIGateway/internal/resilience"
 )
 
 func TestHighConcurrencyLoadAndBoundedMemory(t *testing.T) {

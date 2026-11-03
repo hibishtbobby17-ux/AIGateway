@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"strings"
 
-	"project_alpha/internal/api/middleware"
-	"project_alpha/internal/audit"
-	"project_alpha/internal/identity/principal"
-	"project_alpha/internal/policy"
+	"AIGateway/internal/api/middleware"
+	"AIGateway/internal/audit"
+	"AIGateway/internal/identity/principal"
+	"AIGateway/internal/policy"
 )
 
 // HandlePolicies routes policy management and dry-run simulation:

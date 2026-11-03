@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"project_alpha/internal/mcp/aggregation"
-	"project_alpha/internal/mcp/protocol"
-	"project_alpha/internal/mcp/registry"
-	"project_alpha/internal/mcp/session"
-	"project_alpha/internal/mcp/transport"
-	"project_alpha/internal/mcp/upstream"
+	"AIGateway/internal/mcp/aggregation"
+	"AIGateway/internal/mcp/protocol"
+	"AIGateway/internal/mcp/registry"
+	"AIGateway/internal/mcp/session"
+	"AIGateway/internal/mcp/transport"
+	"AIGateway/internal/mcp/upstream"
 )
 
 func setupTestMCPGateway(t *testing.T) (*transport.GatewayHandler, *registry.MemoryRegistry, *aggregation.Aggregator) {
