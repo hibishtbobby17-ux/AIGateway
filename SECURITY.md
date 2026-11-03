@@ -40,7 +40,7 @@ We take all security vulnerabilities seriously.
 
 ### 1. Private Vulnerability Reporting (Preferred for Critical / High Severity)
 - **Do NOT open a public GitHub issue for unpatched zero-day or critical vulnerabilities.**
-- Please use **[GitHub Private Vulnerability Reporting](https://github.com/hibishtbobby17-ux/AIGateway/security/advisories/new)** in the repository's **Security** tab, or contact the maintainer directly at `hi_bishtbobby17@rediffmail.com`.
+- Please use **[GitHub Private Vulnerability Reporting](https://github.com/hibishtbobby17-ux/AIGateway/security/advisories/new)** in the repository's **Security** tab.
 
 ### 2. Security Enhancement / Non-Sensitive Security Issues
 - For non-sensitive security hardening suggestions, configuration questions, or dependency updates, use the **[Security Report Issue Template](https://github.com/hibishtbobby17-ux/AIGateway/issues/new?template=security_report.md)**.
