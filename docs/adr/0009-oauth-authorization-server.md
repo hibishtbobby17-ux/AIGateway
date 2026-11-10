@@ -45,4 +45,4 @@ Resource-owner authentication and consent must be provided by a trusted identity
 - Deployments must provision and consistently distribute a 32-byte signing-key encryption secret outside the SQL database (environment variable `GATEWAY_SIGNING_KEY_ENCRYPTION_KEY`, encoded as exactly 64 hexadecimal characters). The secret is excluded from config serialization. This component does not yet define secret-manager integration or old-key retirement policy.
 - The SQL consent implementation has no user-facing approval interface or administrative grant API. Integrators must ensure only a trusted, authorized control-plane path can create consent records.
 - Durable JWT revocation adds a SQL lookup to each token verification. Deployments must keep the shared database available to authorization and resource-serving processes; a database outage causes protected requests to fail closed.
-- This decision implements OAuth protocol handling, not the complete built-in identity provider or external OIDC federation.
+- This decision implements OAuth protocol handling, not the complete built-in identity provider or external OIDC federation
