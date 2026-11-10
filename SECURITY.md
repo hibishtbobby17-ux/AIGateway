@@ -54,9 +54,11 @@ Please provide as much of the following information as possible to help us triag
 
 ---
 
-## Note
 
-Its project is not ready please dont use it in production yet.
+## Project Status & Production Readiness
+
+> [!WARNING]
+> **Pre-Production Notice**: AIGateway is currently in active development and experimental status. Do not deploy this project to production environments until the official stable release. Test and evaluate in sandbox or staging environments only.
 
 ---
 
