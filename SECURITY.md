@@ -2,7 +2,7 @@
 
 ## Overview
 
-**AIGateway** is an enterprise-grade AI Gateway and Observability Platform unifying the **Model Context Protocol (MCP)**, **Agent-to-Agent (A2A)** protocol, and a **Universal Multi-Cloud LLM Gateway**. Security, tenant isolation, cryptographic integrity, and zero-trust outbound networking are foundational to this project.
+AIGateway is an enterprise-grade AI Gateway and Observability Platform unifying the Model Context Protocol (MCP), Agent-to-Agent (A2A) protocol, and a Universal Multi-Cloud LLM Gateway. Security, tenant isolation, cryptographic integrity, and zero-trust outbound networking are foundational to this project.
 
 ---
 
@@ -40,7 +40,7 @@ We take all security vulnerabilities seriously.
 
 ### 1. Private Vulnerability Reporting (Preferred for Critical / High Severity)
 - **Do NOT open a public GitHub issue for unpatched zero-day or critical vulnerabilities.**
-- Please use **[GitHub Private Vulnerability Reporting](https://github.com/hibishtbobby17-ux/AIGateway/security/advisories/new)** in the repository's **Security** tab, or contact the maintainer directly at `hi.bishtbobby17@gmail.com`.
+- Please use **[GitHub Private Vulnerability Reporting](https://github.com/hibishtbobby17-ux/AIGateway/security/advisories/new)** in the repository's **Security** tab.
 
 ### 2. Security Enhancement / Non-Sensitive Security Issues
 - For non-sensitive security hardening suggestions, configuration questions, or dependency updates, use the **[Security Report Issue Template](https://github.com/hibishtbobby17-ux/AIGateway/issues/new?template=security_report.md)**.
@@ -54,14 +54,9 @@ Please provide as much of the following information as possible to help us triag
 
 ---
 
-## Response & Disclosure Timeline
+## Note
 
-| Stage | Target SLA | Description |
-| :--- | :--- | :--- |
-| **Acknowledgment** | Within **24–48 hours** | Confirmation of receipt and initial severity triage |
-| **Validation & Root Cause** | Within **5 business days** | Reproduction verified and remediation plan scheduled |
-| **Patch & Release** | **7–14 days** (Critical/High) | Fix validated via CI security scan & regression suite, released as tagged patch |
-| **Public Advisory** | After patch availability | Coordinated disclosure via GitHub Security Advisories |
+Its project is not ready please dont use it in production yet.
 
 ---
 
