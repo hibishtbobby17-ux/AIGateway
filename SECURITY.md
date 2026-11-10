@@ -59,5 +59,5 @@ Please provide as much of the following information as possible to help us triag
 Every commit, pull request, and release runs through the automated security phase in [`.github/workflows/ci.yaml`](.github/workflows/ci.yaml) and [`.github/workflows/release.yaml`](.github/workflows/release.yaml):
 - **Go Static Analysis & Vulnerability Scanning**: `go vet ./...` and `govulncheck ./...`
 - **Filesystem & Dependency CVE Scanning**: Trivy vulnerability scanner (`aquasecurity/trivy-action`) & `npm audit`
-- **Automated Security Test Suite**: `go test -v ./tests/security/...` verifying OAuth 2.1 PKCE enforcement, client secret authentication, cross-tenant isolation, and token revocation/tampering rejection.
+- **Automated Security Test Suite**: `go test -v ./tests/security/...` verifying OAuth 2.1 PKCE enforcement, client secret authentication, cross-tenant isolation, and token revocation/tampering rejection
 
