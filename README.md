@@ -4,6 +4,7 @@
 [![Release Pipeline](https://github.com/hibishtbobby17-ux/AIGateway/actions/workflows/release.yaml/badge.svg)](https://github.com/hibishtbobby17-ux/AIGateway/actions/workflows/release.yaml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Security Policy](https://img.shields.io/badge/Security-Policy-green.svg)](SECURITY.md)
+[![Documentation](https://img.shields.io/badge/Documentation-GitHub%20Pages-38bdf8.svg)](https://hibishtbobby17-ux.github.io/AIGateway/)
 
 A high-performance enterprise AI gateway and observability platform unifying the **Model Context Protocol (MCP)**, the **Agent-to-Agent (A2A)** protocol, and a **Universal Multi-Cloud LLM Gateway** with enterprise identity (OAuth 2.1 PKCE / OIDC), AI guardrails, FinOps token attribution, fine-grained RBAC/ABAC access control, distributed tracing, and resilient outbound networking.
 
